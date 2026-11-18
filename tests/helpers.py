@@ -124,4 +124,12 @@ def finish_and_merge(s: Scenario) -> None:
     git(s.dev_b, "pull")
 
 
-# Task 4 adds dev_a_ships_ctx001(s, decided) here, once `capture` exists.
+def dev_a_ships_ctx001(s: Scenario, decided: str = CTX001_DECIDED) -> None:
+    """Dev A changes the retry delay to 0, records CTX-001 from the diff, and ships it."""
+    from changetrace.capture import capture
+
+    a = s.dev_a
+    git(a, "checkout", "-b", "fix/immediate-retry")
+    set_retry(a, "0")
+    capture(a, ctx001_draft(decided), from_diff=True)
+    finish_and_merge(s)
