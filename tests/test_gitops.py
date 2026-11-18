@@ -143,3 +143,17 @@ def test_load_config_reads_file_with_bom_crlf(tmp_path):
     c = load_config(tmp_path)
     assert (c.project, c.base_branch, c.github) == ("Worker service", "dev", "o/r")
     assert c.environments == ["dev", "prod"] and (c.pr_channel, c.dev_channel) == ("#p", "#d")
+
+
+def test_committed_rename_lists_both_paths(scenario):
+    a = scenario.dev_a
+    git(a, "checkout", "-b", "r"); git(a, "mv", "worker/config.py", "worker/settings.py")
+    commit_all(a, "rename")
+    assert changed_files(a, base_ref(a, "main")) == ["worker/config.py", "worker/settings.py"]
+
+
+def test_staged_rename_lists_both_paths(scenario):
+    a = scenario.dev_a
+    git(a, "mv", "worker/config.py", "worker/settings.py")
+    assert changed_files(a, staged=True) == ["worker/config.py", "worker/settings.py"]
+    assert changed_files(a) == ["worker/config.py", "worker/settings.py"]

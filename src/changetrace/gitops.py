@@ -58,12 +58,12 @@ def changed_files(repo: Path, base: str | None = None, staged: bool = False) -> 
             files.update(_lines(git(repo, "ls-files", "--others", "--exclude-standard")))
         return sorted(files)
     if staged:
-        files.update(_lines(git(repo, "diff", "--cached", "--name-only", "HEAD")))
+        files.update(_lines(git(repo, "diff", "--no-renames", "--cached", "--name-only", "HEAD")))
         return sorted(files)
-    files.update(_lines(git(repo, "diff", "--name-only", "HEAD")))
+    files.update(_lines(git(repo, "diff", "--no-renames", "--name-only", "HEAD")))
     files.update(_lines(git(repo, "ls-files", "--others", "--exclude-standard")))
     if base:
-        files.update(_lines(git(repo, "diff", "--name-only", f"{base}..HEAD")))
+        files.update(_lines(git(repo, "diff", "--no-renames", "--name-only", f"{base}..HEAD")))
     return sorted(files)
 
 
