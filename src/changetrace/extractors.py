@@ -54,7 +54,7 @@ def _kind(filename: str) -> str:
 
 # ---- Python -------------------------------------------------------------
 
-_UNWRAP = {"int", "float", "str", "bool"}
+_BUILTINS = {"int": int, "float": float, "str": str, "bool": bool}
 _ENV_GETTERS = {"getenv", "os.getenv", "os.environ.get"}
 
 
@@ -66,16 +66,28 @@ def _dotted(node: ast.AST) -> str:
     return ""
 
 
-def _resolve(node: ast.AST) -> ast.AST:
+def _evaluate(node: ast.AST) -> str | None:
+    """Python's actual result for a literal, optionally wrapped in int/float/str/bool
+    and/or an env getter's default; None when not statically readable."""
+    applied = []
     while isinstance(node, ast.Call) and not node.keywords:
         fn = _dotted(node.func)
-        if fn in _UNWRAP and len(node.args) == 1:
+        if fn in _BUILTINS and len(node.args) == 1:
+            applied.append(_BUILTINS[fn])
             node = node.args[0]
         elif fn in _ENV_GETTERS and len(node.args) == 2:
             node = node.args[1]
         else:
-            break
-    return node
+            return None
+    if not isinstance(node, ast.Constant):
+        return None
+    value = node.value
+    try:
+        for fn in reversed(applied):
+            value = fn(value)
+    except (ValueError, TypeError):
+        return None
+    return normalize_value(value)
 
 
 def _py_assignments(text: str) -> dict[str, str | None] | None:
@@ -92,8 +104,7 @@ def _py_assignments(text: str) -> dict[str, str | None] | None:
             targets, value = [stmt.target], stmt.value
         else:
             continue
-        node = _resolve(value)
-        val = normalize_value(node.value) if isinstance(node, ast.Constant) else None
+        val = _evaluate(value)
         for t in targets:
             if isinstance(t, ast.Name):
                 out[t.id] = val

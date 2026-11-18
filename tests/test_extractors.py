@@ -105,3 +105,15 @@ def test_changed_keys_new_file_and_added_key_sorted():
     assert changed_keys("c.py", None, "B = 2\nA = 1\n") == [("A", None, "1"), ("B", None, "2")]
     assert changed_keys("c.py", "A = 1\n", "A = 1\nB = 2\n") == [("B", None, "2")]
     assert changed_keys("c.py", "A = 1\n", "A = 1.0\n") == []  # formatting only
+
+
+@pytest.mark.parametrize("src,expected", [
+    ('import os\nX = bool(os.getenv("DEBUG", "false"))\n', Extracted("found", "true")),
+    ("X = int(2.7)\n", Extracted("found", "2")),
+    ("X = bool(0)\n", Extracted("found", "false")),
+    ('import os\nX = int(os.getenv("X", 2))\n', Extracted("found", "2")),
+    ('import os\nX = float(os.environ.get("X", 0.5))\n', Extracted("found", "0.5")),
+    ('X = int("abc")\n', Extracted("unreadable")),
+])
+def test_python_builtin_applied_to_literal(src, expected):
+    assert extract_value("c.py", src, "X") == expected
