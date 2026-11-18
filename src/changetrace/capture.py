@@ -95,6 +95,16 @@ def _check_secrets(draft: str) -> None:
         )
 
 
+def _check_record_secrets(rec: Record) -> None:
+    """Scan the rendered record and each guard value (diff-derived guards bypass the draft scan)."""
+    lines = [render_record(rec)]
+    for g in rec.guards:
+        lines.append(f"{g.key} = {g.expect}")
+        if g.previous is not None:
+            lines.append(f"{g.key} = {g.previous}")
+    _check_secrets("\n".join(lines))
+
+
 def _author(repo: Path, author: str | None) -> str:
     return author or git(repo, "config", "user.name", check=False) or "unknown"
 
@@ -159,6 +169,7 @@ def _new_decision(
             ref = f"{g.file}#{g.key}"
             if ref not in rec.touches:
                 rec.touches.append(ref)
+    _check_record_secrets(rec)
     rec.path = record_path(repo, rec)
     return rec
 

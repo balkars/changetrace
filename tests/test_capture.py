@@ -4,7 +4,7 @@ import pytest
 
 from changetrace.capture import CaptureError, capture, guards_from_diff, observe, scan_secrets, supersede
 from changetrace.records import Guard, load_records
-from helpers import CTX001_DRAFT, dev_a_ships_ctx001, set_retry
+from helpers import CTX001_DRAFT, dev_a_ships_ctx001, set_retry, write
 
 
 def test_capture_from_diff_fills_guard(scenario):
@@ -87,3 +87,21 @@ def test_observe(scenario):
     rec = observe(scenario.dev_a, ["CTX-001"], "dev", "86", "---\ntitle: Request burst\n---\n\n## What happened\nBurst.\n")
     assert rec.id == "OBS-001" and rec.about == ["CTX-001"] and rec.deployment == "86"
     assert rec.kind == "observation" and rec.environment == "dev" and rec.status == "active"
+
+
+def test_capture_from_diff_refuses_secret_guard(scenario):
+    a = scenario.dev_a
+    write(a, "worker/secrets.py", 'API_KEY = "abcdef123456"\n')
+    with pytest.raises(CaptureError):
+        capture(a, CTX001_DRAFT, from_diff=True)
+    assert load_records(a) == []
+
+
+def test_supersede_from_diff_refuses_secret_guard(scenario):
+    dev_a_ships_ctx001(scenario)
+    b = scenario.dev_b
+    write(b, "worker/secrets.py", 'API_KEY = "abcdef123456"\n')
+    with pytest.raises(CaptureError):
+        supersede(b, "CTX-001", "---\ntitle: Backoff\n---\n\n## Decided\nB.\n", from_diff=True)
+    recs = load_records(b)
+    assert [r.id for r in recs] == ["CTX-001"] and recs[0].status == "active"
