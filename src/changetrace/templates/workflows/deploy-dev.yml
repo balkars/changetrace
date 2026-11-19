@@ -27,7 +27,7 @@ jobs:
 
       - name: Deploy (stand-in — replace with the real deploy)
         run: |
-          pytest -q
+          python -m pytest -q
           python -m worker.retry --smoke
 
       - name: Report deployment

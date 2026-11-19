@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 import sys
@@ -53,7 +54,7 @@ def test_deploy_workflow_shape():
     assert job["permissions"] == {"contents": "read", "deployments": "read", "pull-requests": "read"}
     stand_in = [s for s in job["steps"] if "stand-in" in s.get("name", "")]
     assert len(stand_in) == 1
-    assert "pytest -q" in stand_in[0]["run"] and "python -m worker.retry --smoke" in stand_in[0]["run"]
+    assert "python -m pytest -q" in stand_in[0]["run"] and "python -m worker.retry --smoke" in stand_in[0]["run"]
     report = [s for s in job["steps"] if "ct deploy report" in s.get("run", "")]
     assert len(report) == 1
     assert "--run-number ${{ github.run_number }}" in report[0]["run"]
@@ -89,8 +90,25 @@ def test_demo_worker_template_initialised():
 
 
 def test_demo_worker_tests_pass(tmp_path):
+    """Run exactly the stand-in deploy step's commands in a copy of the demo worker."""
     work = tmp_path / "worker-copy"
     shutil.copytree(DEMO, work)
-    result = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+    deploy = load(DEMO / ".github" / "workflows" / "deploy-dev.yml")
+    (step,) = [s for s in deploy["jobs"]["deploy"]["steps"] if "stand-in" in s.get("name", "")]
+    lines = [ln.strip() for ln in step["run"].splitlines() if ln.strip()]
+    assert lines
+    for line in lines:
+        args = shlex.split(line)
+        assert args[0] == "python"
+        args[0] = sys.executable
+        result = subprocess.run(args, cwd=work, capture_output=True, text=True)
+        assert result.returncode == 0, f"{line}\n{result.stdout}{result.stderr}"
+    assert "retry delay: " in result.stdout
+
+
+def test_demo_worker_plain_pytest_works(tmp_path):
+    work = tmp_path / "worker-copy"
+    shutil.copytree(DEMO, work)
+    result = subprocess.run([sys.executable, "-c", "import sys; from pytest import console_main; sys.argv=['pytest','-q','-p','no:cacheprovider']; sys.exit(console_main())"],
                             cwd=work, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
