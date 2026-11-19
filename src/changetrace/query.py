@@ -28,6 +28,7 @@ class RecordView:
     current: bool
     chain: list[str]
     evidence: Evidence | None
+    observations: list[Record] = field(default_factory=list)
 
 
 @dataclass
@@ -87,11 +88,31 @@ def _chain(rec: Record, by_id: dict[str, Record]) -> list[str]:
     return ids
 
 
+def _with_successors(records: list[Record], by_id: dict[str, Record]) -> list[Record]:
+    """Matched records plus everything reachable forward through superseded_by (cycle-safe)."""
+    out = {r.id: r for r in records}
+    for r in records:
+        cur = r
+        while cur.superseded_by and cur.superseded_by in by_id and cur.superseded_by not in out:
+            cur = by_id[cur.superseded_by]
+            out[cur.id] = cur
+    return list(out.values())
+
+
+def _observations_of(rec_id: str, all_records: list[Record]) -> list[Record]:
+    return sorted(
+        (o for o in all_records if o.kind == "observation" and rec_id in o.about),
+        key=lambda o: (o.created, o.id))
+
+
 def _views(repo: Path, records: list[Record], gh: GitHub | None) -> list[RecordView]:
-    by_id = {r.id: r for r in load_records(repo)}
-    ordered = sorted(records, key=lambda r: (r.status == "active", r.created, r.id), reverse=True)
+    all_records = load_records(repo)
+    by_id = {r.id: r for r in all_records}
+    decisions = [r for r in _with_successors(records, by_id) if r.kind != "observation"]
+    ordered = sorted(decisions, key=lambda r: (r.status == "active", r.created, r.id), reverse=True)
     return [
-        RecordView(r, r.status == "active", _chain(r, by_id), resolve_evidence(repo, r, gh))
+        RecordView(r, r.status == "active", _chain(r, by_id), resolve_evidence(repo, r, gh),
+                   _observations_of(r.id, all_records))
         for r in ordered
     ]
 
@@ -128,7 +149,8 @@ def _short(sha: str) -> str:
 
 def history(repo: Path, key: str, gh: GitHub | None = None) -> list[HistoryEntry]:
     repo = Path(repo)
-    records = [r for r in load_records(repo) if any(g.key == key for g in r.guards)]
+    all_records = load_records(repo)
+    records = [r for r in all_records if any(g.key == key for g in r.guards)]
     entries: list[HistoryEntry] = []
     change_commits: list[str] = []
     for fname in sorted({g.file for r in records for g in r.guards if g.key == key}):
@@ -144,8 +166,12 @@ def history(repo: Path, key: str, gh: GitHub | None = None) -> list[HistoryEntry
                 entries.append(HistoryEntry(when, "value", f"{key} {prev} → {res.value} (commit {_short(sha)})"))
                 change_commits.append(sha)
             prev = res.value
-    for r in records:
+    shown = [r for r in _with_successors(records, {r.id: r for r in all_records}) if r.kind != "observation"]
+    for r in shown:
         entries.append(HistoryEntry(r.created, "record", f"{r.id} {r.title} ({r.status})"))
+        for o in _observations_of(r.id, all_records):
+            entries.append(HistoryEntry(
+                o.created, "record", f"{o.id} {o.title} (observation about {r.id})"))
     if gh is not None and change_commits:
         try:
             for env in load_config(repo).environments:
@@ -186,5 +212,8 @@ def format_views(views: list[RecordView]) -> str:
                 lines.append(f"  {name}: " + text.replace("\n", "\n    "))
         if v.evidence is not None:
             lines.append("  Evidence: " + _evidence_line(v.evidence))
+        for o in v.observations:
+            where = "".join(f" · {x}" for x in (o.environment, f"deployment {o.deployment}" if o.deployment else "") if x)
+            lines.append(f"  Observed: {o.id}{where} — {o.title}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)

@@ -153,6 +153,11 @@ def run_check(repo: Path, base: str | None = None, staged: bool = False,
                     findings.append(Finding(
                         "info", rec.id, tfile, f"relevant: {rec.id} {rec.title}"))
                     break
+    reported = {f.record_id for f in findings}
+    for rel, rec in current:
+        if (rel in diff and rec.kind == "decision" and rec.status == "active"
+                and rec.id not in reported and old_of(rel) is None):
+            findings.append(Finding("info", rec.id, rel, f"new decision: {rec.id} {rec.title}"))
     return findings
 
 

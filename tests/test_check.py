@@ -208,3 +208,30 @@ def test_relative_repo_path(scenario, monkeypatch):
     set_retry(scenario.dev_b, "2")
     monkeypatch.chdir(scenario.dev_b.parent)
     assert has_conflict(run_check(scenario.dev_b.relative_to(scenario.dev_b.parent)))
+
+
+def test_new_decision_is_a_linked_decision(scenario):
+    from changetrace.capture import capture
+    from helpers import ctx001_draft
+    a = scenario.dev_a
+    git(a, "checkout", "-b", "fix/immediate-retry")
+    set_retry(a, "0")
+    capture(a, ctx001_draft(), from_diff=True)
+    f = run_check(a)
+    assert len(f) == 1 and f[0].kind == "info" and f[0].record_id == "CTX-001"
+    assert f[0].message.startswith("new decision: CTX-001")
+    md = format_markdown(f, {r.id: r for r in load_records(a)})
+    assert "1 linked decision · 0 conflicts" in md and "Watch out" in md
+    assert not has_conflict(f)
+
+
+def test_superseding_record_also_reported_as_new_decision(scenario):
+    dev_a_ships_ctx001(scenario)
+    b = scenario.dev_b
+    set_retry(b, "2")
+    supersede(b, "CTX-001", "---\ntitle: Controlled backoff\n---\n\n## Decided\nBackoff.\n")
+    f = run_check(b)
+    assert any(x.kind == "resolved" and x.record_id == "CTX-001" for x in f)
+    assert any(x.kind == "info" and x.message.startswith("new decision: CTX-002") for x in f)
+    assert not has_conflict(f)
+    assert "2 linked decisions · 0 conflicts" in format_markdown(f, {r.id: r for r in load_records(b)})

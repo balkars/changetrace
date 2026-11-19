@@ -83,3 +83,23 @@ def test_history_includes_deployment(scenario):
     write(b, ".context/config.yml", "project: p\ngithub: o/r\nenvironments: [dev]\n")
     h = history(b, "RETRY_DELAY_SECONDS", GitHub("o/r", gh))
     assert any(e.kind == "deployment" and e.text == f"dev deploy {head[:7]} (success)" for e in h)
+
+
+def test_why_shows_replacement_that_does_not_mention_the_key(scenario):
+    dev_a_ships_ctx001(scenario); b = scenario.dev_b
+    supersede(b, "CTX-001", "---\ntitle: Controlled backoff\nguards: []\ntouches: [worker/config.py#RETRY_BACKOFF_MAX_SECONDS]\n---\n\n## Decided\nBackoff.\n")
+    v = why(b, "RETRY_DELAY_SECONDS")
+    assert [x.record.id for x in v] == ["CTX-002", "CTX-001"]
+    assert v[0].current is True and v[1].current is False
+    assert any("CTX-002" in e.text for e in history(b, "RETRY_DELAY_SECONDS"))
+    assert [x.record.id for x in explain(b, "worker/config.py")][:2] == ["CTX-002", "CTX-001"]
+
+
+def test_observations_are_evidence(scenario):
+    from changetrace.capture import observe
+    dev_a_ships_ctx001(scenario); b = scenario.dev_b
+    observe(b, ["CTX-001"], "dev", "1", "---\ntitle: Request burst on dev\n---\n\n## Observed\nBurst.\n")
+    views = why(b, "RETRY_DELAY_SECONDS")
+    assert not any(v.record.kind == "observation" for v in views)
+    assert "Observed: OBS-001 · dev · deployment 1 — Request burst on dev" in format_views(views)
+    assert "OBS-001 Request burst on dev (observation about CTX-001)" in [e.text for e in history(b, "RETRY_DELAY_SECONDS")]
