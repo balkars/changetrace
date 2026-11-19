@@ -8,8 +8,11 @@ from typing import Literal
 
 from .config import load_config
 from .extractors import extract_value, values_equal
-from .gitops import base_ref, changed_files, read_at, to_repo_path
-from .records import Record, parse_record
+from .gitops import base_ref, changed_files, git, read_at, to_repo_path
+from .records import CONTEXT_DIR, Record, load_records, parse_record
+
+
+APPEND_ONLY = "records are append-only — use ct supersede"
 
 
 @dataclass
@@ -26,21 +29,30 @@ def has_conflict(findings: list[Finding]) -> bool:
     return any(f.kind == "conflict" for f in findings)
 
 
-def _read_text(repo: Path, rel: str) -> str | None:
-    p = Path(repo) / rel
-    try:
-        return p.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
-    except (OSError, UnicodeDecodeError):
-        return None
+def _text(repo: Path, rel: str, staged: bool) -> str | None:
+    if staged:
+        t = read_at(repo, "", rel)
+    else:
+        try:
+            t = (Path(repo) / rel).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+    return None if t is None else t.replace("\r\n", "\n").lstrip("﻿")
 
 
-def _rel(repo: Path, rec: Record) -> str | None:
-    if rec.path is None:
-        return None
-    try:
-        return to_repo_path(repo, str(rec.path))
-    except ValueError:
-        return None
+def _is_record_path(rel: str) -> bool:
+    return rel.endswith(".md") and rel.startswith((f"{CONTEXT_DIR}/decisions/", f"{CONTEXT_DIR}/observations/"))
+
+
+def _current_records(repo: Path, staged: bool) -> list[tuple[str, Record]]:
+    if not staged:
+        return [(Path(r.path).relative_to(repo).as_posix(), r) for r in load_records(repo)]
+    out = []
+    for rel in git(repo, "ls-files", CONTEXT_DIR).splitlines():
+        text = _text(repo, rel, True) if _is_record_path(rel) else None
+        if text is not None:
+            out.append((rel, parse_record(text, repo / rel)))
+    return sorted(out, key=lambda x: x[1].id)
 
 
 def _frozen(rec: Record) -> Record:
@@ -49,38 +61,71 @@ def _frozen(rec: Record) -> Record:
 
 def run_check(repo: Path, base: str | None = None, staged: bool = False,
               file: str | None = None) -> list[Finding]:
-    from .records import load_records
-
-    repo = Path(repo)
+    repo = Path(repo).resolve()
     if base is None:
         base = base_ref(repo, load_config(repo).base_branch)
     ref = base or "HEAD"
     diff = set(changed_files(repo, base, staged))
     scope = {to_repo_path(repo, file)} & diff if file is not None else diff
 
-    records = load_records(repo)
-    changed_records = [r for r in records if _rel(repo, r) in diff]
+    current = _current_records(repo, staged)
+    present = {rel for rel, _ in current}
+    changed = [r for rel, r in current if rel in diff]
     findings: list[Finding] = []
 
-    for rec in records:
-        rel = _rel(repo, rec)
-        if rec.status == "active":
-            live = True
-        elif rec.status == "superseded":
-            old = read_at(repo, ref, rel) if rel else None
-            live = old is not None and parse_record(old).status == "active"
-        else:
-            live = False
+    def old_of(rel: str) -> Record | None:
+        text = read_at(repo, ref, rel)
+        return parse_record(text, repo / rel) if text is not None else None
 
-        guarded_files = {g.file.replace("\\", "/") for g in rec.guards}
-        for g in rec.guards:
+    # (record, old-at-ref, path, still present)
+    items: list[tuple[Record, Record | None, str, bool]] = []
+    for rel, rec in current:
+        items.append((rec, old_of(rel) if rel in diff else None, rel, True))
+    for rel in sorted(diff - present):
+        old = old_of(rel) if _is_record_path(rel) else None
+        if old is not None:
+            items.append((old, old, rel, False))
+            if rel in scope or file is None:
+                findings.append(Finding("conflict", old.id, rel, APPEND_ONLY))
+
+    for rec, old, rel, exists in items:
+        was_active = old is not None and old.status == "active"
+        live = rec.status == "active" or was_active
+        if exists and old is not None:
+            if _frozen(old) != _frozen(rec) and (file is None or rel in scope):
+                findings.append(Finding("conflict", rec.id, rel, APPEND_ONLY))
+            if was_active and rec.status not in ("active", "superseded"):
+                findings.append(Finding(
+                    "conflict", rec.id, rel,
+                    f"status of {rec.id} changed from active to {rec.status} — use ct supersede"))
+        guards = old.guards if old is not None else rec.guards
+        guarded_files = {g.file.replace("\\", "/") for g in guards}
+
+        def resolver() -> str | None:
+            for c in changed:
+                if c.id != rec.id and rec.id in c.supersedes and exists and (
+                        rec.status == "active"
+                        or (rec.status == "superseded" and rec.superseded_by == c.id)):
+                    return c.id
+            return None
+
+        if exists and was_active and rec.status == "superseded" and resolver() is None                 and (file is None or rel in scope):
+            findings.append(Finding(
+                "conflict", rec.id, rel,
+                f"{rec.id} marked superseded without a superseding record — use ct supersede"))
+
+        for g in guards:
             gfile = g.file.replace("\\", "/")
             if not live or gfile not in scope:
                 continue
-            text = _read_text(repo, gfile)
+            text = _text(repo, gfile, staged)
             got = extract_value(gfile, text, g.key) if text is not None else None
+            by = resolver()
             if got is None or got.status == "missing":
-                if rec.status == "active":
+                if by:
+                    findings.append(Finding(
+                        "resolved", rec.id, gfile, f"superseded by {by} in this change", g.key))
+                else:
                     findings.append(Finding(
                         "conflict", rec.id, gfile,
                         f"guarded key removed: {g.key} is no longer in {gfile}", g.key))
@@ -91,37 +136,23 @@ def run_check(repo: Path, base: str | None = None, staged: bool = False,
                 continue
             if values_equal(got.value, g.expect):
                 continue
-            if rec.status == "superseded":
+            if by:
                 findings.append(Finding(
-                    "resolved", rec.id, gfile,
-                    f"superseded by {rec.superseded_by} in this change", g.key, got.value))
-            elif any(rec.id in c.supersedes for c in changed_records):
-                by = next(c.id for c in changed_records if rec.id in c.supersedes)
-                findings.append(Finding(
-                    "resolved", rec.id, gfile,
-                    f"superseded by {by} in this change", g.key, got.value))
-            else:
-                msg = f"changes {g.key} from {g.expect} to {got.value}"
-                if g.previous is not None and values_equal(got.value, g.previous):
-                    msg += f" — this restores the value {rec.id} moved away from"
-                findings.append(Finding("conflict", rec.id, gfile, msg, g.key, got.value))
+                    "resolved", rec.id, gfile, f"superseded by {by} in this change",
+                    g.key, got.value))
+                continue
+            msg = f"changes {g.key} from {g.expect} to {got.value}"
+            if g.previous is not None and values_equal(got.value, g.previous):
+                msg += f" — this restores the value {rec.id} moved away from"
+            findings.append(Finding("conflict", rec.id, gfile, msg, g.key, got.value))
 
-        if rec.status == "active":
+        if exists and rec.status == "active":
             for t in rec.touches:
                 tfile = t.split("#", 1)[0].replace("\\", "/")
                 if tfile in scope and tfile not in guarded_files:
                     findings.append(Finding(
                         "info", rec.id, tfile, f"relevant: {rec.id} {rec.title}"))
                     break
-
-    for rec in changed_records:
-        rel = _rel(repo, rec)
-        if file is not None and rel not in scope:
-            continue
-        old = read_at(repo, ref, rel)
-        if old is not None and _frozen(parse_record(old)) != _frozen(rec):
-            findings.append(Finding(
-                "conflict", rec.id, rel, "records are append-only — use ct supersede"))
     return findings
 
 

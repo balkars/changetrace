@@ -140,3 +140,71 @@ def test_text_and_json_formats(scenario):
     data = json.loads(format_json(f))
     assert data[0]["kind"] == "conflict" and data[0]["record_id"] == "CTX-001"
     assert isinstance(f[0], Finding)
+
+
+def _ctx001_path(repo):
+    return next((repo / ".context/decisions").glob("CTX-001-*.md"))
+
+
+def test_deleted_record_conflicts(scenario):
+    dev_a_ships_ctx001(scenario)
+    b = scenario.dev_b
+    _ctx001_path(b).unlink()
+    set_retry(b, "2")
+    f = run_check(b)
+    assert has_conflict(f)
+    assert any("append-only" in x.message for x in f)
+    assert any(x.record_id == "CTX-001" and x.current == "2" for x in f)
+
+
+def test_renamed_and_edited_record_conflicts(scenario):
+    dev_a_ships_ctx001(scenario)
+    b = scenario.dev_b
+    p = _ctx001_path(b)
+    text = p.read_text(encoding="utf-8").replace('expect: "0"', 'expect: "2"')
+    p.unlink()
+    write(b, ".context/decisions/CTX-001-renamed.md", text)
+    set_retry(b, "2")
+    f = run_check(b)
+    assert has_conflict(f) and any("append-only" in x.message for x in f)
+
+
+@pytest.mark.parametrize("status", ["proposed", "rejected"])
+def test_status_downgrade_conflicts(scenario, status):
+    dev_a_ships_ctx001(scenario)
+    b = scenario.dev_b
+    p = _ctx001_path(b)
+    p.write_text(p.read_text(encoding="utf-8").replace("status: active", f"status: {status}"),
+                 encoding="utf-8")
+    set_retry(b, "2")
+    f = run_check(b)
+    assert any("changed from active" in x.message for x in f)
+    assert any(x.kind == "conflict" and x.current == "2" for x in f)
+
+
+def test_superseded_without_superseder_conflicts(scenario):
+    dev_a_ships_ctx001(scenario)
+    b = scenario.dev_b
+    p = _ctx001_path(b)
+    p.write_text(p.read_text(encoding="utf-8").replace("status: active", "status: superseded"),
+                 encoding="utf-8")
+    set_retry(b, "2")
+    f = run_check(b)
+    assert has_conflict(f) and not any(x.kind == "resolved" for x in f)
+
+
+def test_staged_reads_the_index(scenario):
+    dev_a_ships_ctx001(scenario)
+    b = scenario.dev_b
+    set_retry(b, "2")
+    git(b, "add", "-A")
+    set_retry(b, "0")
+    assert has_conflict(run_check(b, staged=True))
+    assert not has_conflict(run_check(b))
+
+
+def test_relative_repo_path(scenario, monkeypatch):
+    dev_a_ships_ctx001(scenario)
+    set_retry(scenario.dev_b, "2")
+    monkeypatch.chdir(scenario.dev_b.parent)
+    assert has_conflict(run_check(scenario.dev_b.relative_to(scenario.dev_b.parent)))
