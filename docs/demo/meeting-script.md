@@ -1,22 +1,22 @@
 # ChangeTrace demo: meeting script
 
-Two developers, one setting (`RETRY_DELAY_SECONDS`), one decision that gets challenged. Run from the tool repo root unless a step says otherwise. Dev A uses Claude Code in `demo-run\devA`. Dev B uses Copilot CLI in `demo-run\devB`.
+Two developers, one setting (`RETRY_DELAY_SECONDS`), one decision that gets challenged. Each step names its terminal. Open three PowerShell windows: **Presenter terminal (repo root)**, **Dev A terminal** and **Dev B terminal**. Dev A uses Claude Code in `demo-run\devA`. Dev B uses Copilot CLI in `demo-run\devB`.
 
 ## Before the meeting
 
-- [ ] Reset the demo. This force-pushes `main` of the two demo repos and recreates the clones:
+- [ ] Presenter terminal (repo root): reset the demo. This force-pushes `main` of the two demo repos and recreates the clones:
 
 ```powershell
 .venv\Scripts\python scripts\demo_reset.py
 ```
 
-- [ ] In both terminals (Dev A and Dev B), load the environment and check that `ct` resolves to the repo's `.venv`:
+- [ ] In every terminal, start at the repo root, load the environment and check that `ct` resolves to the repo's `.venv`:
 
 ```powershell
 . .\scripts\demo-env.ps1
 ```
 
-- [ ] GitHub login works:
+- [ ] Presenter terminal: GitHub login works:
 
 ```powershell
 gh auth status
@@ -30,6 +30,8 @@ gh auth status
 
 ### 1. Dev A changes the delay (Claude Code)
 
+Dev A terminal:
+
 ```powershell
 cd demo-run\devA
 claude
@@ -41,7 +43,7 @@ Prompt, word for word:
 
 Screen: the assistant runs `ct explain worker/config.py` and `ct why RETRY_DELAY_SECONDS` (no records yet), changes the default from 2 to 0, drafts CTX-001 and shows it. Approve the draft. The assistant runs `ct capture --from-diff --input -` and commits the code and the record together.
 
-Then open the pull request:
+Then open the pull request (Dev A terminal, still in `demo-run\devA`):
 
 ```powershell
 git push -u origin HEAD
@@ -57,19 +59,23 @@ Screen: the PR on GitHub has the ChangeTrace comment naming CTX-001, its Decided
 
 ### 3. Merge and deploy to dev
 
+Dev A terminal, in `demo-run\devA`:
+
 ```powershell
 gh pr merge --merge --delete-branch
 ```
 
+Watch the newest run (it may take a few seconds to appear):
+
 ```powershell
-gh run watch
+gh run watch (gh run list -L 1 --json databaseId -q '.[0].databaseId')
 ```
 
 Screen: the `deploy-dev` run finishes. GitHub shows a `dev` deployment. `#engineering-dev` has the digest naming the deployment number, the PR and CTX-001.
 
 ### 4. Record what happened on dev
 
-Use the deployment number from the Slack digest (shown here as 1; replace it).
+Dev A terminal, in `demo-run\devA`. Use the deployment number from the Slack digest (shown here as 1; replace it).
 
 ```powershell
 @'
@@ -82,7 +88,7 @@ After deployment 1, failed jobs retried immediately and payments API requests ar
 '@ | ct observe --about CTX-001 --env dev --deployment 1 --input -
 ```
 
-Screen: `Saved OBS-001 → .context/observations/OBS-001-…`. Commit and push it so Dev B sees it:
+Screen: `Saved OBS-001 → .context/observations/OBS-001-…`. Commit and push it so Dev B sees it (same terminal):
 
 ```powershell
 git switch main
@@ -94,7 +100,7 @@ git push
 
 ### 5. Dev B asks for the old value (Copilot CLI)
 
-In the Dev B terminal:
+Dev B terminal:
 
 ```powershell
 cd demo-run\devB
@@ -108,7 +114,7 @@ Prompt, word for word:
 
 Screen: the assistant runs `ct why RETRY_DELAY_SECONDS` and `ct check`, then stops and names CTX-001 with its Watch out and evidence (PR, dev deployment, OBS-001) before editing. It offers bounded exponential backoff instead. Approve that. The assistant drafts CTX-002 and, after a yes, runs `ct supersede CTX-001 --input -`.
 
-If the assistant skips the check, run it by hand:
+If the assistant skips the check, run it by hand (Dev B terminal, in `demo-run\devB`):
 
 ```powershell
 ct check --file worker/config.py
@@ -118,7 +124,7 @@ Screen: exit code 1 and a conflict with CTX-001.
 
 ### 6. Query from the terminal and from Slack
 
-In `demo-run\devB`:
+Dev B terminal, in `demo-run\devB`:
 
 ```powershell
 ct why RETRY_DELAY_SECONDS
@@ -134,7 +140,7 @@ ct dev-since yesterday
 
 Screen: CTX-002 current, CTX-001 superseded, with the PR and the dev deployment linked.
 
-Slack bot (skip if not built). Start it in a third terminal from the repo root, after loading `demo-env.ps1`:
+Slack bot (skip if not built). Presenter terminal (repo root):
 
 ```powershell
 ct slack-bot
@@ -145,6 +151,8 @@ In Slack, type `/ct why RETRY_DELAY_SECONDS`, then `/ct dev-since yesterday`.
 Screen: same content as the CLI, formatted for Slack.
 
 ### 7. Obsidian vault (skip if not built)
+
+Presenter terminal (repo root):
 
 ```powershell
 ct vault build --hub demo\hub.yml --out vault-out
@@ -158,7 +166,7 @@ Screen: CTX-001 to CTX-002 chain, OBS-001, the `RETRY_DELAY_SECONDS` key note, t
 
 - **Network or GitHub is down:** stop, say so, play the rehearsal recording.
 - **A step's result looks wrong:** do not debug live. Run the CLI equivalent shown in that step; if that fails too, play the recording from that step.
-- **Need to start over:** run the reset command from "Before the meeting" and restart at step 1.
+- **Need to start over:** in the Presenter terminal (repo root) run the reset command from "Before the meeting" and restart at step 1.
 
 ## Cut rule
 

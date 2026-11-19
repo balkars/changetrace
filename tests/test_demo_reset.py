@@ -182,3 +182,31 @@ def test_meeting_script_has_prompts_and_cut_rule():
     assert "Retries are hammering the payments API. Set RETRY_DELAY_SECONDS back to 2." in text
     assert "skip if not built" in text.lower()
     assert "demo-env.ps1" in text and "gh auth status" in text
+
+
+@pytest.mark.parametrize("target", [".", ".."])
+def test_refuses_run_dir_at_or_above_tool_repo(target, capsys):
+    before = sorted(p.name for p in ROOT.iterdir())
+    assert demo_reset.main(["--run-dir", target]) == 2
+    assert sorted(p.name for p in ROOT.iterdir()) == before
+    assert "refusing" in capsys.readouterr().err
+
+
+def test_refuses_unmarked_existing_dir_outside_repo(tmp_path):
+    victim = tmp_path / "precious"
+    victim.mkdir()
+    (victim / "file.txt").write_text("keep", encoding="utf-8")
+    assert demo_reset.main(["--run-dir", str(victim)], remote_for=_remote_for(tmp_path)) == 2
+    assert (victim / "file.txt").read_text(encoding="utf-8") == "keep"
+    (victim / ".changetrace-demo-run").write_text("", encoding="utf-8")
+    assert demo_reset.main(["--run-dir", str(victim)], remote_for=_remote_for(tmp_path)) == 0
+    assert not (victim / "file.txt").exists()
+
+
+def test_git_failure_prints_error_and_returns_1(tmp_path, capsys):
+    code = demo_reset.main(
+        ["--run-dir", str(tmp_path / "run")],
+        remote_for=lambda n: (tmp_path / "missing" / f"{n}.git").as_posix(),
+    )
+    assert code == 1
+    assert capsys.readouterr().err.startswith("error: ")

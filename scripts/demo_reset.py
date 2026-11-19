@@ -27,6 +27,7 @@ TOOL_REPO = "changetrace"
 AUTHOR = {"name": "ChangeTrace Demo", "email": "demo@example.test"}
 DEVS = (("devA", "Dev A", "dev-a@example.test"), ("devB", "Dev B", "dev-b@example.test"))
 COPY_IGNORE = shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc", ".git")
+MARKER = ".changetrace-demo-run"
 GITHUB_URL = re.compile(r"github\.com[/:]([^/]+)/([^/]+?)(?:\.git)?/?$")
 
 
@@ -72,6 +73,12 @@ def _is_tool_repo(url: str) -> bool:
     tail = re.split(r"[/:\\]", url.strip().rstrip("/\\"))[-1]
     tail = tail[:-4] if tail.endswith(".git") else tail
     return tail.lower() == TOOL_REPO
+
+
+def _safe_to_wipe(run_dir: Path) -> bool:
+    if not run_dir.exists() or (run_dir / MARKER).is_file():
+        return True
+    return run_dir != ROOT and ROOT in run_dir.parents  # strictly inside the tool repo
 
 
 def _build_repo(template: Path, dest: Path) -> None:
@@ -164,9 +171,23 @@ def main(
     run_dir = Path(args.run_dir)
     if not run_dir.is_absolute():
         run_dir = ROOT / run_dir
+    run_dir = run_dir.resolve()
+    if not _safe_to_wipe(run_dir):
+        print(f"error: refusing to wipe {run_dir}: it must be inside {ROOT}, "
+              f"new, or contain {MARKER}", file=sys.stderr)
+        return 2
     _rmtree(run_dir)
     run_dir.mkdir(parents=True)
+    (run_dir / MARKER).write_text("created by scripts/demo_reset.py", encoding="utf-8")
 
+    try:
+        return _reset(args, names, urls, remote_for, run_dir)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+def _reset(args, names, urls, remote_for, run_dir: Path) -> int:
     sources: dict[str, str] = {}
     for name in names:
         with tempfile.TemporaryDirectory() as tmp:
