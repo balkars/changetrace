@@ -5,7 +5,6 @@ a secret and is never printed.
 """
 from __future__ import annotations
 
-import http.client
 import json
 import sys
 import urllib.error
@@ -106,12 +105,9 @@ def post_webhook(url: str | None, payload: dict, opener: Callable = urllib.reque
             close()
         return True
     except urllib.error.HTTPError as e:
-        reason = str(e.code)
-    except urllib.error.URLError as e:
-        reason = str(e.reason)
-    except ValueError:
-        reason = "invalid webhook URL"  # the message would include the secret URL
-    except (OSError, http.client.HTTPException) as e:
-        reason = str(e) or type(e).__name__
+        reason = f"HTTP {e.code}"
+    except Exception as e:  # noqa: BLE001 - Slack must never fail a command
+        # Never print str(e): urllib and http.client embed the secret webhook URL in messages.
+        reason = type(e).__name__
     print(f"Slack post failed: {reason}", file=sys.stderr)
     return False

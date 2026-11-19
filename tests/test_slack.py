@@ -118,7 +118,7 @@ def test_post_webhook_swallow_http_error(capsys):
 
     assert post_webhook(URL, {"text": "x"}, opener=opener) is False
     err = capsys.readouterr().err
-    assert "Slack post failed: 404" in err and "SECRET" not in err
+    assert "Slack post failed: HTTP 404" in err and "SECRET" not in err
 
 
 def test_post_webhook_swallows_network_and_bad_url_errors(capsys):
@@ -134,6 +134,15 @@ def test_post_webhook_swallows_network_and_bad_url_errors(capsys):
     assert captured.err.count("Slack post failed:") == 4 and "SECRET" not in captured.err + captured.out
     # a malformed URL with the real opener must also be swallowed, offline
     assert post_webhook("not-a-url", {}) is False
+
+
+def test_post_webhook_never_prints_secret_with_real_opener(capsys):
+    for bad in ("https://h/a b" + chr(9) + "SECRET", "https://h:SECRETport/x", "https://h/a" + chr(10) + "SECRET",
+                "SECRET-no-scheme"):
+        assert post_webhook(bad, {"text": "x"}) is False
+    captured = capsys.readouterr()
+    assert "SECRET" not in captured.out + captured.err
+    assert captured.err.count("Slack post failed:") == 4
 
 
 # --- CLI -----------------------------------------------------------------
