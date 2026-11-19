@@ -1,0 +1,7 @@
+repos:
+  - name: Worker service
+    path: demo-run/devB
+    github: balkars/changetrace-demo-worker
+  - name: API service
+    path: demo-run/api
+    github: balkars/changetrace-demo-api

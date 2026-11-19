@@ -1,0 +1,29 @@
+display_information:
+  name: ChangeTrace
+  description: Answers "why is this setting what it is" from decision records in your repos.
+  background_color: "#1f3a5f"
+features:
+  bot_user:
+    display_name: ChangeTrace
+    always_online: false
+  slash_commands:
+    - command: /ct
+      description: Look up decision records and dev deployments
+      usage_hint: why KEY | dev-since WHEN
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - commands
+      - app_mentions:read
+      - incoming-webhook
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
