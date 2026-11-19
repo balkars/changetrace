@@ -159,3 +159,44 @@ def test_cli_dev_since_prints_reports(scenario, monkeypatch):
 def test_cli_dev_since_bad_value(scenario):
     res = CliRunner().invoke(main, ["dev-since", "whenever", "--repo", str(scenario.dev_a)])
     assert res.exit_code == 2
+
+
+def test_cli_report_survives_unwritable_step_summary(scenario, tmp_path, monkeypatch):
+    initial, head, commits = _setup(scenario)
+    gh = _fake(scenario, [(1, initial, "2026-11-17T10:00:00Z")], pr_commits=commits)
+    monkeypatch.setattr("changetrace.cli._gh", lambda repo: gh)
+    res = CliRunner().invoke(
+        main, ["deploy", "report", "--sha", head, "--repo", str(scenario.dev_a)],
+        env={"GITHUB_STEP_SUMMARY": str(tmp_path)},  # a directory: cannot be opened for append
+    )
+    assert res.exit_code == 0, res.output
+    assert "CTX-001" in res.output and "could not write GITHUB_STEP_SUMMARY" in res.output
+
+
+def test_parse_since_timezone_aware_becomes_naive_local():
+    from datetime import timezone
+    now = datetime(2026, 11, 18, 15)
+    got = parse_since("2026-11-01T10:00:00Z", now)
+    assert got.tzinfo is None
+    assert got == datetime(2026, 11, 1, 10, tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+    assert parse_since("2026-11-01T10:00:00+02:00", now).tzinfo is None
+    assert got < now  # comparable with naive datetimes
+
+
+def test_first_deployment_caps_pr_lookups(scenario, monkeypatch):
+    calls = []
+
+    def runner(args):
+        calls.append(args[1])
+        return "[]"
+
+    shas = [f"{i:040x}" for i in range(120)]
+    monkeypatch.setattr("changetrace.deploy.rev_list", lambda repo, start, end: shas)
+    head = git(scenario.dev_a, "rev-parse", "HEAD")
+    r = build_deploy_report(scenario.dev_a, "dev", head, GitHub("o/r", runner), _deployments=[])
+    assert r.prev_sha is None and len(r.commits) == 120
+    assert len(calls) == 50 and calls[0].endswith(f"{shas[0]}/pulls")
+    calls.clear()
+    prev = [{"id": 1, "sha": head, "created_at": "", "state": "success"}]  # not != sha: still no prev
+    build_deploy_report(scenario.dev_a, "dev", head, GitHub("o/r", runner), _deployments=prev)
+    assert len(calls) == 50

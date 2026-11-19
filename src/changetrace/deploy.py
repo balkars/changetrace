@@ -11,6 +11,9 @@ from .gitops import git, is_ancestor, rev_list
 from .records import CONTEXT_DIR, Record, load_records
 
 
+_FIRST_DEPLOY_PR_LOOKUPS = 50
+
+
 @dataclass
 class DeployReport:
     env: str
@@ -59,8 +62,10 @@ def build_deploy_report(repo: Path, env: str, sha: str, gh: GitHub | None, run_n
     prs: list[dict] = []
     if links and gh is not None:
         seen: set = set()
+        # A first deployment has no lower bound: look up PRs only for the newest commits.
+        lookup = commits if prev_sha else commits[:_FIRST_DEPLOY_PR_LOOKUPS]
         try:
-            for c in commits:
+            for c in lookup:
                 for p in gh.prs_for_commit(c):
                     if p["number"] not in seen:
                         seen.add(p["number"])
@@ -84,9 +89,10 @@ def parse_since(text: str, now: datetime) -> datetime:
         n = int(m.group(1))
         return now - (timedelta(days=n) if m.group(2) == "d" else timedelta(hours=n))
     try:
-        return datetime.fromisoformat(text.strip())
+        parsed = datetime.fromisoformat(text.strip())
     except ValueError:
         raise ValueError(f"cannot understand {text!r}: use yesterday, 2d, 5h or a date like 2026-11-01") from None
+    return parsed.astimezone().replace(tzinfo=None) if parsed.tzinfo else parsed
 
 
 def dev_since(repo: Path, since: datetime, env: str, gh: GitHub) -> list[DeployReport]:

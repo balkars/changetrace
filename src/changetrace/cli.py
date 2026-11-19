@@ -23,6 +23,7 @@ from .init import init_repo
 from .gitops import GitError, base_ref, git, read_at, repo_root
 from .query import explain as explain_views
 from .query import format_views, history as history_entries, why as why_views
+from .slack.notify import deploy_payload, post_webhook, pr_payload
 from .records import CONTEXT_DIR, KINDS, RecordError, load_records, next_id, parse_record, record_path, render_record
 from .validate import validate_repo
 
@@ -239,8 +240,14 @@ def hook_claude() -> None:
     sys.exit(code)
 
 
-def _post_slack(report) -> None:
-    """Hook point: Task 10 posts the report to Slack using SLACK_WEBHOOK_URL."""
+def _repo_url(repo: Path) -> str:
+    slug = load_config(repo).github
+    return f"https://github.com/{slug}" if slug else ""
+
+
+def _post_slack(repo: Path, report) -> None:
+    payload = deploy_payload(report, load_config(repo).project, _repo_url(repo))
+    post_webhook(os.environ.get("SLACK_WEBHOOK_URL"), payload)
 
 
 @main.group()
@@ -261,9 +268,12 @@ def deploy_report(env, sha, run_number, repo):
     click.echo(format_report_text(report), nl=False)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
-        with open(summary, "a", encoding="utf-8", newline="\n") as f:
-            f.write(format_report_markdown(report))
-    _post_slack(report)
+        try:
+            with open(summary, "a", encoding="utf-8", newline="\n") as f:
+                f.write(format_report_markdown(report))
+        except OSError as e:
+            click.echo(f"warning: could not write GITHUB_STEP_SUMMARY: {e}", err=True)
+    _post_slack(repo, report)
 
 
 @main.command("dev-since")
@@ -288,3 +298,34 @@ def dev_since(when, env, repo):
         click.echo(format_report_text(r))
     if not reports:
         click.echo(f"no successful deployments to {env} since {since:%Y-%m-%d %H:%M}")
+
+
+@main.group()
+def notify() -> None:
+    """Send notifications."""
+
+
+@notify.group()
+def slack() -> None:
+    """Slack notifications (webhook URL in SLACK_WEBHOOK_URL)."""
+
+
+@slack.command("pr")
+@click.option("--pr", "number", type=int, required=True, help="Pull request number.")
+@_repo_option
+def slack_pr(number, repo):
+    """Post a pull request's decision records and Watch out notes to Slack."""
+    cfg = load_config(repo)
+    base = base_ref(repo, cfg.base_branch) or f"origin/{cfg.base_branch}"
+    out = git(repo, "diff", "--name-only", f"{base}...HEAD", "--", f"{CONTEXT_DIR}/")
+    changed = {ln.strip() for ln in out.splitlines() if ln.strip()}
+    records = [r for r in load_records(repo) if Path(r.path).resolve().relative_to(repo).as_posix() in changed]
+    pr = {"number": number, "title": f"PR #{number}", "author": "", "url": ""}
+    gh = _gh(repo)
+    if gh is not None:
+        try:
+            pr = gh.pr(number)
+        except GitHubUnavailable:
+            pass
+    payload = pr_payload(pr, records, run_check(repo), _repo_url(repo), cfg.project)
+    post_webhook(os.environ.get("SLACK_WEBHOOK_URL"), payload)
