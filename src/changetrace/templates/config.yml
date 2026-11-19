@@ -1,0 +1,7 @@
+project: __PROJECT__
+base_branch: main
+# github: <owner>/<repo>   # enables PR and deployment lookups
+environments: [dev]
+slack:
+  pr_channel: "#engineering-prs"
+  dev_channel: "#engineering-dev"

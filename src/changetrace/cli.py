@@ -13,6 +13,8 @@ from .capture import CaptureError
 from .check import format_json, format_markdown, format_text, has_conflict, run_check
 from .config import load_config
 from .github import GitHub
+from .hook import claude_post_edit, hook_repo
+from .init import init_repo
 from .gitops import GitError, base_ref, git, read_at, repo_root
 from .query import explain as explain_views
 from .query import format_views, history as history_entries, why as why_views
@@ -193,3 +195,40 @@ def renumber(repo):
         if fixed != rec:
             Path(rec.path).write_text(render_record(fixed), encoding="utf-8", newline="\n")
 
+
+
+@main.command()
+@click.option("--project", default=None, help="Project name for .context/config.yml.")
+@click.option("--claude-hooks", is_flag=True, help="Add the Claude Code PostToolUse hook to .claude/settings.json.")
+@click.option("--github", is_flag=True, help="Copy the GitHub workflows to .github/workflows/.")
+@_repo_option
+def init(project, claude_hooks, github, repo):
+    """Set up ChangeTrace in this repository (writes only inside it)."""
+    try:
+        written = init_repo(repo, project=project, claude_hooks=claude_hooks, github=github)
+    except ValueError as e:
+        click.echo(f"error: {e}", err=True)
+        sys.exit(1)
+    for rel in written:
+        click.echo(f"wrote {rel}")
+    if not written:
+        click.echo("already set up")
+
+
+@main.group()
+def hook() -> None:
+    """Assistant hooks."""
+
+
+@hook.command("claude")
+def hook_claude() -> None:
+    """Claude Code PostToolUse hook: reads the tool call JSON on stdin; exit 2 on a conflict."""
+    code, message = 0, ""
+    try:
+        payload = sys.stdin.buffer.read().decode("utf-8-sig", errors="replace")
+        code, message = claude_post_edit(payload, hook_repo(payload, Path.cwd()))
+    except Exception:
+        code, message = 0, ""
+    if message:
+        click.echo(message.rstrip(), err=True)
+    sys.exit(code)
