@@ -112,7 +112,13 @@ Prompt, word for word:
 
 > Retries are hammering the payments API. Set RETRY_DELAY_SECONDS back to 2.
 
-Screen: the assistant runs `ct why RETRY_DELAY_SECONDS` and `ct check`, then stops and names CTX-001 with its Watch out and evidence (PR, dev deployment, OBS-001) before editing. It offers bounded exponential backoff instead. Approve that. The assistant drafts CTX-002 and, after a yes, runs `ct supersede CTX-001 --input -`.
+Screen: the assistant runs `ct why RETRY_DELAY_SECONDS`, then stops without editing and names CTX-001 with its Watch out, evidence and OBS-001. It offers alternatives and asks: "try one of these alternatives, or override CTX-001 anyway?"
+
+Answer, word for word:
+
+> Keep CTX-001. Add bounded exponential backoff after the first immediate retry instead.
+
+Screen: it adds `RETRY_BACKOFF_BASE_SECONDS` / `RETRY_BACKOFF_MAX_SECONDS` (leaving `RETRY_DELAY_SECONDS` at 0), shows a draft record and asks for a yes. Answer `yes`. It runs `ct capture --from-diff --input -` → `Saved CTX-002 → …`. (To show the override path instead, answer "override CTX-001 anyway"; it then drafts a superseding record and runs `ct supersede CTX-001 --input -` after your yes.)
 
 If the assistant skips the check, run it by hand (Dev B terminal, in `demo-run\devB`):
 
@@ -138,7 +144,7 @@ ct history --key RETRY_DELAY_SECONDS
 ct dev-since yesterday
 ```
 
-Screen: CTX-002 current, CTX-001 superseded, with the PR and the dev deployment linked.
+Screen: the decisions for the setting with the PR and dev deployment linked and `Observed: OBS-001 · dev · deployment 1 — Request burst on dev`. After the override path: CTX-002 current, CTX-001 superseded, chain CTX-001 → CTX-002.
 
 Slack bot (skip if not built). Presenter terminal (repo root):
 

@@ -10,6 +10,13 @@ What to say, what to do, and what the room should see, minute by minute. Use it 
 
 Run the checklist in `docs/demo/meeting-script.md` → *Before the meeting*: reset the demo, load `demo-env.ps1` in all three terminals, `gh auth status`, open Slack (`#engineering-prs`, `#engineering-dev`), open the demo repo's Pull requests and Actions tabs, cue the backup recording.
 
+Also, found in the dry run:
+
+- **Log in to both assistants the day before.** Run `claude` once and complete login (the CLI on this laptop reported "OAuth session expired"). Run `copilot` once and complete login.
+- **Trust the demo folders in Copilot** so it loads them without a warning: start `copilot` in `demo-run\devB` once and choose to trust the folder.
+- **Copilot asks before each shell command.** When it asks to run `ct …`, choose "approve for this session" so later `ct` calls don't interrupt the story. Approve `python -m pytest` the same way.
+- **Claude Code asks before edits and commands.** Approve `ct` for the session on the first prompt.
+
 Windows to arrange, left to right:
 
 | Window | Shows |
@@ -132,7 +139,15 @@ Saved CTX-001 → .context/decisions/CTX-001-immediate-retry-for-failed-jobs.md
 
 **Do:** switch to the browser → the PR.
 
-**Screen:** a ChangeTrace comment: *1 linked decision · 0 conflicts*, with CTX-001's Decided and Watch out. Slack `#engineering-prs` shows the PR summary with the same warning.
+**Screen:** a ChangeTrace comment (this is the dry-run output):
+```
+### ChangeTrace
+1 linked decision · 0 conflicts
+- i CTX-001 Immediate retry for failed jobs — new decision
+  - Decided: Default RETRY_DELAY_SECONDS is 0, so a failed job retries immediately.
+  - Watch out: Restoring 2 brings back slow recovery. Immediate retries can burst against an unavailable downstream dependency.
+```
+Slack `#engineering-prs` shows the PR summary with the same warning.
 
 **Say:**
 > "The reviewer gets the reasoning without asking Dev A. So does the team channel."
@@ -160,30 +175,44 @@ Saved CTX-001 → .context/decisions/CTX-001-immediate-retry-for-failed-jobs.md
 **Do (Dev B terminal):** `git pull`, `copilot`, then type exactly:
 > Retries are hammering the payments API. Set RETRY_DELAY_SECONDS back to 2.
 
-**Screen:** the assistant runs `ct why` / `ct check` and stops before finishing the change:
+**Screen:** the assistant reads the skill, runs `ct why RETRY_DELAY_SECONDS`, and stops **without editing anything**. In the dry run Copilot replied (abridged):
 ```
-✗ worker/config.py — changes RETRY_DELAY_SECONDS from 0 to 2 — this restores the value CTX-001 moved away from
-  CTX-001 · Dev A · …: Immediate retry for failed jobs
-  Decided: Default RETRY_DELAY_SECONDS is 0, so a failed job retries immediately.
-  Watch out: Restoring 2 brings back slow recovery. Immediate retries can burst against an unavailable downstream dependency.
-1 conflict(s)
+I haven't edited anything. Setting RETRY_DELAY_SECONDS back to 2 conflicts with an active decision record.
+
+This edit conflicts with CTX-001, "Immediate retry for failed jobs".
+- Decided: default RETRY_DELAY_SECONDS is 0, so a failed job retries immediately.
+- Why: failed jobs waited 2 seconds before the first retry, slowing recovery.
+- Watch out: Restoring 2 brings back slow recovery. It also warns that immediate retries
+  can burst against an unavailable downstream dependency — which matches the payments
+  API problem you're seeing (`ct why` shows OBS-001, a request burst on dev).
+- Evidence: commit …, tests/test_retry.py::test_recovers_without_delay
+- Alternatives that keep CTX-001 intact:
+  - set RETRY_DELAY_SECONDS=2 via the environment for the payments path only
+  - add backoff or a retry cap for payments calls
+
+Do you want me to try one of these alternatives, or override CTX-001 anyway?
 ```
 
-**Pause here. Let the room read it.**
+**Pause here. Let the room read it.** Point at three things: *"I haven't edited anything"*, the Watch out, and OBS-001 — the assistant connected Dev B's symptom to the warning Dev A wrote.
 
 **Say:**
 > "This is the whole point. Different developer, different machine, different assistant — and Dev A isn't in the room. The tool knew, because the reasoning travelled with the code. And it doesn't block: it explains, and the developer decides."
 
-**Screen:** the assistant offers an alternative — keep the first retry immediate, then back off exponentially, capped.
+**Do:** type exactly:
+> Keep CTX-001. Add bounded exponential backoff after the first immediate retry instead.
 
-**Do:** accept. Approve the draft CTX-002 when shown.
+**Screen:** the assistant edits `worker/config.py` (adds `RETRY_BACKOFF_BASE_SECONDS` and `RETRY_BACKOFF_MAX_SECONDS`, leaves `RETRY_DELAY_SECONDS` at 0), `worker/retry.py` and a test, then shows a draft record *"Bounded exponential backoff after first immediate retry"* and asks for a yes before saving it.
 
-**Screen:** `Saved CTX-002 → …` and the check now reads `✓ worker/config.py — CTX-001 superseded by CTX-002 in this change`.
+**Do:** answer `yes`.
+
+**Screen:** `Saved CTX-002 → .context/decisions/CTX-002-…` and `ct check` → `no conflicts`.
 
 **Say:**
-> "Dev B didn't ignore the old decision — they replaced it, on the record. CTX-001 stays in history as superseded."
+> "Dev B kept Dev A's fix and solved their own problem on top of it — and wrote down why, for the next person."
 
-**If the assistant skips the check:** run `ct check --file worker/config.py` yourself (runbook step 5). Say: "The assistant should have run this; the check itself is deterministic."
+**If you want to show the override path instead** (optional, adds a minute): answer "override CTX-001 anyway". The assistant drafts CTX-002 that supersedes CTX-001; after your yes it runs `ct supersede`, and `ct why` then shows CTX-002 current and CTX-001 superseded.
+
+**If the assistant edits without asking:** run `ct check --file worker/config.py` yourself (runbook step 5) — it exits 1 and names CTX-001. Say: "The assistant should have stopped; the check itself is deterministic and catches it either way." With Claude Code the project hook shows this automatically after the edit.
 
 ### 5f. Ask "why?" later — 0:21.5 (1.5 min)
 
@@ -192,7 +221,17 @@ Saved CTX-001 → .context/decisions/CTX-001-immediate-retry-for-failed-jobs.md
 ct why RETRY_DELAY_SECONDS
 ```
 
-**Screen:** CTX-002 current; CTX-001 superseded; chain CTX-001 → CTX-002; evidence: commit, PR #1, dev deployment, OBS-001.
+**Screen:** if Dev B chose the alternative, CTX-001 is still current and `ct why` shows it with its evidence and `Observed: OBS-001 · dev · deployment 1 — Request burst on dev`. If Dev B overrode, it shows (dry-run output):
+```
+CTX-002 · active · Dev B · … — Bounded exponential backoff for retries
+  Chain: CTX-001 → CTX-002
+  Decided: Keep the first retry immediate, then back off exponentially …
+CTX-001 · superseded · Dev A · … — Immediate retry for failed jobs
+  Chain: CTX-001 → CTX-002
+  Evidence: commit … · PR #1 · dev deploy …
+  Observed: OBS-001 · dev · deployment 1 — Request burst on dev
+```
+Then `ct explain worker/config.py` lists both CTX-001 and CTX-002 for the file.
 
 **Say:**
 > "Six months from now, someone opens this file. One command gives the whole story: what we decided, what replaced it, why, and the evidence."
@@ -211,7 +250,7 @@ Optional if time allows: `ct history --key RETRY_DELAY_SECONDS`.
 **Do:** scroll the proposal to *08 · Implementation*.
 
 **Say:**
-> "What you saw is built and tested — about 180 automated tests, on Windows and Linux. The decision records, the check, the skill, the Claude hook, the GitHub PR and deploy workflows, Slack notifications."
+> "What you saw is built and tested — about 195 automated tests. The decision records, the check, the skill, the Claude hook, the GitHub PR and deploy workflows, Slack notifications."
 >
 > "What's next, in order: the cross-repo Obsidian view and the Slack 'why' bot; then support for the languages and config formats our real services use — today it reads Python, YAML, JSON, TOML and .env."
 >
