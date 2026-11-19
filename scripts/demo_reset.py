@@ -76,9 +76,9 @@ def _is_tool_repo(url: str) -> bool:
 
 
 def _safe_to_wipe(run_dir: Path) -> bool:
-    if not run_dir.exists() or (run_dir / MARKER).is_file():
-        return True
-    return run_dir != ROOT and ROOT in run_dir.parents  # strictly inside the tool repo
+    if run_dir == ROOT or run_dir in ROOT.parents:
+        return False
+    return not run_dir.exists() or (run_dir / MARKER).is_file()
 
 
 def _build_repo(template: Path, dest: Path) -> None:
@@ -154,6 +154,14 @@ def main(
         def remote_for(name: str) -> str:
             return f"https://github.com/{args.owner}/changetrace-demo-{name}.git"
 
+    run_dir = Path(args.run_dir)
+    if not run_dir.is_absolute():
+        run_dir = ROOT / run_dir
+    run_dir = run_dir.resolve()
+    if not _safe_to_wipe(run_dir):
+        print(f"error: refusing to wipe {run_dir}: it is the tool repo or a parent of it, "
+              f"or exists without a {MARKER} marker", file=sys.stderr)
+        return 2
     names = [n for n in TEMPLATES if (ROOT / "demo" / n).is_dir()]
     if not names:
         print("error: no templates under demo/", file=sys.stderr)
@@ -168,14 +176,6 @@ def main(
                       "not a demo repo", file=sys.stderr)
                 return 2
 
-    run_dir = Path(args.run_dir)
-    if not run_dir.is_absolute():
-        run_dir = ROOT / run_dir
-    run_dir = run_dir.resolve()
-    if not _safe_to_wipe(run_dir):
-        print(f"error: refusing to wipe {run_dir}: it must be inside {ROOT}, "
-              f"new, or contain {MARKER}", file=sys.stderr)
-        return 2
     _rmtree(run_dir)
     run_dir.mkdir(parents=True)
     (run_dir / MARKER).write_text("created by scripts/demo_reset.py", encoding="utf-8")

@@ -210,3 +210,24 @@ def test_git_failure_prints_error_and_returns_1(tmp_path, capsys):
     )
     assert code == 1
     assert capsys.readouterr().err.startswith("error: ")
+
+
+@pytest.mark.parametrize("sub", ["src", ".git", "docs"])
+def test_refuses_unmarked_dir_inside_repo(sub, tmp_path, monkeypatch, capsys):
+    fake_root = tmp_path / "repo"
+    (fake_root / sub).mkdir(parents=True)
+    (fake_root / sub / "keep.py").write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(demo_reset, "ROOT", fake_root.resolve())
+    assert demo_reset.main(["--run-dir", sub]) == 2
+    assert (fake_root / sub / "keep.py").read_text(encoding="utf-8") == "keep"
+    assert "refusing to wipe" in capsys.readouterr().err
+
+
+def test_marked_repo_root_is_still_refused(tmp_path, monkeypatch):
+    fake_root = tmp_path / "repo"
+    fake_root.mkdir()
+    (fake_root / ".changetrace-demo-run").write_text("", encoding="utf-8")
+    (fake_root / "keep.py").write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(demo_reset, "ROOT", fake_root.resolve())
+    assert demo_reset.main(["--run-dir", "."]) == 2
+    assert (fake_root / "keep.py").exists()
