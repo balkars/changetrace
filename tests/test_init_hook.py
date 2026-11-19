@@ -77,6 +77,13 @@ def test_skill_content():
     for cmd in ("ct explain", "ct why", "ct check --file", "ct capture --from-diff --input -",
                 "ct supersede <ID> --input -"):
         assert cmd in text
+    for phrase in ("stop before editing", "is **not** permission to override",
+                   "wait for the developer's answer", "override CTX-NNN anyway?"):
+        assert phrase in text
+    repo = Path(__file__).resolve().parents[1]
+    for copy in ("demo/worker/.agents/skills/changetrace/SKILL.md",
+                 "demo/worker/.claude/skills/changetrace/SKILL.md"):
+        assert (repo / copy).read_bytes() == (files("changetrace") / "templates" / "SKILL.md").read_bytes()
 
 
 def test_hook_absolute_windows_path(scenario):

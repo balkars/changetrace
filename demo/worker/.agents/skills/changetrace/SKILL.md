@@ -9,17 +9,21 @@ Decision records live in `.context/decisions/` next to the code they protect. Us
 
 ## Rules
 
-1. **Before exploring a file or a setting**, read what was decided about it.
+1. **Before you edit anything, look up what was decided about it.**
    - `ct explain <path>` lists the records that touch a file.
    - `ct why <KEY>` shows the records behind a setting, a `file#Symbol`, or a record ID.
-   - Read the active decisions before you propose a change.
+   - If an **active** decision covers the file or setting you are about to change, and your change would undo or contradict it: **stop before editing.** Do not edit, run `ct supersede`, or commit yet. Go to rule 2.
 
-2. **Before and after editing a file that has records**, run `ct check --file <path>`.
-   - Exit code 1 means the edit undoes a recorded decision. Stop.
-   - Tell the developer using the conflict reply below. Offer alternatives.
-   - Do not make the conflicting edit unless the developer says so.
+2. **When a change would undo a recorded decision, ask first — every time.**
+   - Reply with the conflict reply below: what was decided, why, the warning, the evidence, and at least one alternative that keeps the decision intact.
+   - End with the question and wait for the developer's answer.
+   - A request to make the change is **not** permission to override. Even if the developer asked for exactly this value or this revert, they may not know the decision exists. Show it and ask.
+   - Only continue after the developer has seen the conflict reply and answered.
 
-3. **If the developer decides to override a decision**, draft a superseding record, show it, and wait for a yes. Then run `ct supersede <ID> --input -` with the draft on stdin.
+3. **After the developer answers:**
+   - If they choose an alternative, make that change instead, and record it (rule 4) or supersede (below) as appropriate.
+   - If they choose to override, draft a superseding record, show it, and wait for a yes. Then run `ct supersede <ID> --input -` with the draft on stdin.
+   - After any edit to a file that has records, run `ct check --file <path>`. Exit code 1 means the edit still undoes a decision that has not been superseded: stop and go back to rule 2.
 
 4. **Before committing a meaningful change**, draft a record. A meaningful change is a changed default or config value, a behaviour change, or an approach chosen over a rejected alternative.
    - Build the draft from the reasoning the developer approved, the diff, and the tests.
@@ -42,7 +46,7 @@ Decision records live in `.context/decisions/` next to the code they protect. Us
 > - Evidence: <commit, PR, tests, deployments from `ct why`>
 > - Alternatives: <options that keep the decision intact>
 >
-> Proceed anyway?
+> Do you want me to try one of these alternatives, or override CTX-NNN anyway?
 
 ## Capture draft
 
