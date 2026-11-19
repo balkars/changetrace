@@ -114,6 +114,8 @@ def parse_record(text: str, path: Path | None = None) -> Record:
     for g in raw_guards:
         if not isinstance(g, dict) or "file" not in g or "key" not in g or "expect" not in g:
             raise RecordError("each guard needs file, key and expect")
+        if g["expect"] is None:
+            raise RecordError("guard 'expect' must not be empty")
         guards.append(Guard(str(g["file"]), str(g["key"]), str(g["expect"]), _str_or_none(g.get("previous"))))
 
     return Record(
@@ -176,6 +178,8 @@ def load_records(repo: Path) -> list[Record]:
                 records.append(parse_record(f.read_text(encoding="utf-8"), f))
             except RecordError as e:
                 raise RecordError(f"{f.name}: {e}") from e
+            except UnicodeDecodeError as e:
+                raise RecordError(f"{f.name}: not valid UTF-8") from e
     return sorted(records, key=lambda r: r.id)
 
 
@@ -194,7 +198,7 @@ def next_id(repo: Path, kind: str) -> str:
 
 
 def slugify(title: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", title.lower())[:40].strip("-")
+    return re.sub(r"[^a-z0-9]+", "-", title.lower())[:40].strip("-") or "record"
 
 
 def record_path(repo: Path, rec: Record) -> Path:

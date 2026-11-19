@@ -65,3 +65,23 @@ def test_next_id_and_path(tmp_path):
     assert next_id(tmp_path, "observation") == "OBS-001"
     r = parse_record(SAMPLE)
     assert record_path(tmp_path, r) == d / "CTX-001-immediate-retry-for-failed-jobs.md"
+
+
+def test_load_records_wraps_non_utf8(tmp_path):
+    from changetrace.records import load_records
+    d = tmp_path / ".context/decisions"
+    d.mkdir(parents=True)
+    (d / "CTX-001-bad.md").write_bytes(b"---\ntitle: \xff\xfe\n---\n")
+    with pytest.raises(RecordError, match=r"CTX-001-bad\.md: not valid UTF-8"):
+        load_records(tmp_path)
+
+
+def test_guard_with_null_expect_is_rejected():
+    for bad in ("expect: null", "expect:"):
+        with pytest.raises(RecordError):
+            parse_record(SAMPLE.replace('expect: "0"', bad))
+
+
+def test_slugify_falls_back_when_no_ascii_alphanumerics():
+    from changetrace.records import slugify
+    assert slugify("再試行") == "record"
