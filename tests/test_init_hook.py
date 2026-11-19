@@ -62,7 +62,12 @@ def test_init_merges_existing_claude_settings(tmp_path):
 
 def test_init_github_copies_workflows(tmp_path):
     git(tmp_path, "init", "-b", "main")
-    init_repo(tmp_path, github=True)  # no workflow templates yet: nothing copied, no error
+    written = init_repo(tmp_path, github=True)
+    from importlib.resources import files
+    for name in ("changetrace-pr.yml", "deploy-dev.yml"):
+        template = (files("changetrace") / "templates" / "workflows" / name).read_text(encoding="utf-8")
+        assert f".github/workflows/{name}" in written
+        assert (tmp_path / ".github" / "workflows" / name).read_text(encoding="utf-8") == template
 
 
 def test_skill_content():
