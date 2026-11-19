@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import functools
+import os
 import sys
+from datetime import datetime
 from dataclasses import replace
 from pathlib import Path
 
@@ -12,7 +14,10 @@ from . import capture as capture_mod
 from .capture import CaptureError
 from .check import format_json, format_markdown, format_text, has_conflict, run_check
 from .config import load_config
-from .github import GitHub
+from .deploy import (
+    build_deploy_report, dev_since as dev_since_reports, format_report_markdown, format_report_text, parse_since,
+)
+from .github import GitHub, GitHubUnavailable
 from .hook import claude_post_edit, hook_repo
 from .init import init_repo
 from .gitops import GitError, base_ref, git, read_at, repo_root
@@ -232,3 +237,54 @@ def hook_claude() -> None:
     if message:
         click.echo(message.rstrip(), err=True)
     sys.exit(code)
+
+
+def _post_slack(report) -> None:
+    """Hook point: Task 10 posts the report to Slack using SLACK_WEBHOOK_URL."""
+
+
+@main.group()
+def deploy() -> None:
+    """Deployment commands."""
+
+
+@deploy.command("report")
+@click.option("--env", default="dev", show_default=True, help="Environment that was deployed.")
+@click.option("--sha", required=True, help="Commit that was deployed.")
+@click.option("--run-number", default=None, help="CI run number.")
+@_repo_option
+def deploy_report(env, sha, run_number, repo):
+    """Report what this deployment added since the previous successful one."""
+    report = build_deploy_report(repo, env, sha, _gh(repo), run_number)
+    if not report.links_available:
+        click.echo("links unavailable (offline or gh not logged in)")
+    click.echo(format_report_text(report), nl=False)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8", newline="\n") as f:
+            f.write(format_report_markdown(report))
+    _post_slack(report)
+
+
+@main.command("dev-since")
+@click.argument("when")
+@click.option("--env", default="dev", show_default=True)
+@_repo_option
+def dev_since(when, env, repo):
+    """What changed in an environment since WHEN (yesterday, 2d, 5h or a date)."""
+    try:
+        since = parse_since(when, datetime.now())
+    except ValueError as e:
+        raise click.BadParameter(str(e), param_hint="WHEN")
+    gh = _gh(repo)
+    try:
+        if gh is None:
+            raise GitHubUnavailable("no github repository configured")
+        reports = dev_since_reports(repo, since, env, gh)
+    except GitHubUnavailable:
+        click.echo("links unavailable (offline or gh not logged in)")
+        return
+    for r in reports:
+        click.echo(format_report_text(r))
+    if not reports:
+        click.echo(f"no successful deployments to {env} since {since:%Y-%m-%d %H:%M}")
