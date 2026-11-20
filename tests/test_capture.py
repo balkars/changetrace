@@ -36,8 +36,9 @@ def test_capture_dedups_touches(scenario):
 
 
 def test_capture_refuses_secret(scenario):
-    with pytest.raises(CaptureError, match="api_key"):
+    with pytest.raises(CaptureError, match=r"possible secret \(line \d+: credential-assignment\)") as exc:
         capture(scenario.dev_a, CTX001_DRAFT + "\napi_key = abcdef123456\n")
+    assert "abcdef123456" not in str(exc.value)
     assert load_records(scenario.dev_a) == []
 
 
@@ -57,11 +58,11 @@ def test_capture_proposed_status(scenario):
 
 
 def test_scan_secrets_patterns():
-    assert scan_secrets("key AKIAABCDEFGHIJKLMNOP here")
+    assert scan_secrets("key AKIAABCDEFGHIJKLMNOP here") == [(1, "aws-access-key")]
     assert scan_secrets("ghp_" + "a" * 24)
     assert scan_secrets("-----BEGIN RSA PRIVATE KEY-----")
     assert scan_secrets("https://hooks.slack.com/services/T0/B0/xyz")
-    assert scan_secrets("Password: hunter22")
+    assert scan_secrets("ok\nPassword: hunter22") == [(2, "credential-assignment")]
     assert scan_secrets("plain prose about tokens") == []
 
 

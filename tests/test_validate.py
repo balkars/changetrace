@@ -52,7 +52,9 @@ def test_validate_possible_secret(scenario):
     dev_a_ships_ctx001(scenario); b = scenario.dev_b
     p = next((b / ".context/decisions").glob("CTX-001-*.md"))
     p.write_text(p.read_text(encoding="utf-8") + "\napi_key = abcdef123456\n", encoding="utf-8")
-    assert "possible secret: api_key = abcdef123456" in _msgs(b)
+    msgs = _msgs(b)
+    assert any(m.startswith("possible secret on line ") for m in msgs)
+    assert "abcdef123456" not in "\n".join(msgs)
 
 
 def test_validate_skill_copies_differ(scenario):

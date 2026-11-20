@@ -52,8 +52,8 @@ def validate_repo(repo: Path) -> list[Problem]:
                 problems.append(Problem(rel, f"parse error: {e}"))
                 continue
             parsed.append((rel, rec))
-            for line in scan_secrets(text):
-                problems.append(Problem(rel, f"possible secret: {line}"))
+            for line_no, _name in scan_secrets(text):
+                problems.append(Problem(rel, f"possible secret on line {line_no}"))
 
     by_id: dict[str, Record] = {}
     for rel, rec in parsed:

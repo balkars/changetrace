@@ -28,25 +28,30 @@ class CaptureError(ValueError):
 
 
 _SECRET_PATTERNS = [
-    re.compile(p)
-    for p in (
-        r"AKIA[0-9A-Z]{16}",
-        r"gh[pousr]_[A-Za-z0-9]{20,}",
-        r"xox[abposr]-[A-Za-z0-9-]{10,}",
-        r"hooks\.slack\.com/services/\S+",
-        r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
-        r"(?i)(password|passwd|secret|api[_-]?key|token)\s*[:=]\s*\S{6,}",
+    (name, re.compile(p))
+    for name, p in (
+        ("aws-access-key", r"AKIA[0-9A-Z]{16}"),
+        ("github-token", r"gh[pousr]_[A-Za-z0-9]{20,}"),
+        ("slack-token", r"xox[abposr]-[A-Za-z0-9-]{10,}"),
+        ("slack-webhook", r"hooks\.slack\.com/services/\S+"),
+        ("private-key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+        ("credential-assignment",
+         r"(?i)(password|passwd|secret|api[_-]?key|token)\s*[:=]\s*\S{6,}"),
     )
 ]
 
 
-def scan_secrets(text: str) -> list[str]:
-    """Return the lines of `text` that look like they contain a secret."""
-    return [
-        line.strip()
-        for line in text.replace("\r\n", "\n").split("\n")
-        if any(p.search(line) for p in _SECRET_PATTERNS)
-    ]
+def scan_secrets(text: str) -> list[tuple[int, str]]:
+    """Return (line number, pattern name) for each line that looks like it holds a secret.
+
+    The matched text itself is never returned, so callers cannot echo it."""
+    hits: list[tuple[int, str]] = []
+    for n, line in enumerate(text.replace("\r\n", "\n").split("\n"), start=1):
+        for name, pattern in _SECRET_PATTERNS:
+            if pattern.search(line):
+                hits.append((n, name))
+                break
+    return hits
 
 
 def guards_from_diff(repo: Path) -> list[Guard]:
@@ -90,9 +95,8 @@ def _split_draft(draft: str) -> tuple[dict, str]:
 def _check_secrets(draft: str) -> None:
     hits = scan_secrets(draft)
     if hits:
-        raise CaptureError(
-            "refusing to store text that looks like a secret:\n" + "\n".join(f"  {h}" for h in hits)
-        )
+        line_no, name = hits[0]
+        raise CaptureError(f"draft contains a possible secret (line {line_no}: {name})")
 
 
 def _check_record_secrets(rec: Record) -> None:
