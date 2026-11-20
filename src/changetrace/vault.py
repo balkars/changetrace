@@ -6,7 +6,7 @@ import re
 import shutil
 import tempfile
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Callable
 
 import yaml
@@ -101,6 +101,16 @@ def _banner(origin: str, sha: str) -> str:
     return f"> Generated from {origin}@{sha} — {BANNER_TAIL}"
 
 
+def _plain_relative(f: str) -> bool:
+    if "\\" in f or ".." in f.split("/"):
+        return False
+    for cls in (PurePosixPath, PureWindowsPath):
+        p = cls(f)
+        if p.drive or p.root or p.is_absolute() or ".." in p.parts:
+            return False
+    return True
+
+
 def _read_owned(out: Path) -> list[str]:
     """Vault-relative POSIX paths of files a previous build wrote (from the marker)."""
     try:
@@ -110,7 +120,7 @@ def _read_owned(out: Path) -> list[str]:
         return []
     ok = []
     for f in files if isinstance(files, list) else []:
-        if isinstance(f, str) and f and f != MARKER and ".." not in Path(f).parts and not Path(f).is_absolute():
+        if isinstance(f, str) and f and f != MARKER and _plain_relative(f):
             ok.append(f)
     return ok
 
@@ -134,10 +144,21 @@ def _remove_owned(out: Path, owned: list[str]) -> None:
     root = out.resolve()
     for rel in owned:
         f = out / rel
-        if f.is_file() and not f.is_symlink():
+        try:
+            f.resolve().relative_to(root)
+            inside = f.resolve() != root
+        except ValueError:
+            inside = False
+        if inside and f.is_file() and not f.is_symlink():
             f.unlink()
             parent = f.parent
-            while parent.resolve() != root:
+            while True:
+                try:
+                    parent.resolve().relative_to(root)
+                except ValueError:
+                    break
+                if parent.resolve() == root:
+                    break
                 try:
                     parent.rmdir()
                 except OSError:

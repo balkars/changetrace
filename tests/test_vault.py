@@ -269,3 +269,22 @@ def test_cli_vault_build(worker, api, tmp_path):
     (tmp_path / "other" / "f.txt").write_text("x", encoding="utf-8")
     res = CliRunner().invoke(main, ["vault", "build", "--hub", str(hub), "--out", str(tmp_path / "other")])
     assert res.exit_code == 1 and "error:" in res.output
+
+
+@pytest.mark.parametrize("entry", ["C:victim.txt", "/victim.txt", "\victim.txt", "..\victim.txt", "../victim.txt"])
+def test_hostile_marker_entries_delete_nothing_outside_vault(entry, worker, api, tmp_path, monkeypatch):
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    out = tmp_path / "vault"
+    build_vault(_repos(worker, api), out, gh_for=_no_gh)
+    victims = [tmp_path / "victim.txt", cwd / "victim.txt"]
+    for v in victims:
+        v.write_text("keep", encoding="utf-8")
+    marker = json.loads((out / ".changetrace-vault").read_text(encoding="utf-8"))
+    marker["files"].append(entry)
+    (out / ".changetrace-vault").write_text(json.dumps(marker), encoding="utf-8")
+    build_vault(_repos(worker, api), out, gh_for=_no_gh)
+    assert all(v.read_text(encoding="utf-8") == "keep" for v in victims)
+    assert (out / "Keys/RETRY_DELAY_SECONDS.md").is_file()
+    assert entry not in json.loads((out / ".changetrace-vault").read_text(encoding="utf-8"))["files"]
