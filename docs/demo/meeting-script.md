@@ -41,7 +41,13 @@ Prompt, word for word:
 
 > Failed jobs take too long to recover. Find why and fix it.
 
-Screen: the assistant runs `ct explain worker/config.py` and `ct why RETRY_DELAY_SECONDS` (no records yet), changes the default from 2 to 0, drafts CTX-001 and shows it. Approve the draft. The assistant runs `ct capture --from-diff --input -` and commits the code and the record together.
+Screen: the assistant runs `ct why RETRY_DELAY_SECONDS` (no records yet), changes the default from 2 to 0, runs the tests and `ct check`, and offers to draft a decision record.
+
+Answer, word for word:
+
+> Yes, draft the decision record. Mention that immediate retries could burst against a downstream service that is down.
+
+Screen: the draft (Problem, Decided, Tried and ruled out, Assumptions, Watch out, Evidence) and a question. Answer `yes`, and approve the `ct capture` and `git commit` commands when asked. The assistant saves CTX-001 and commits it with the code.
 
 Then open the pull request (Dev A terminal, still in `demo-run\devA`):
 
@@ -133,7 +139,7 @@ Screen: exit code 1 and a conflict with CTX-001.
 Dev B terminal, in `demo-run\devB`:
 
 ```powershell
-ct why RETRY_DELAY_SECONDS
+ct explain worker/config.py
 ```
 
 ```powershell

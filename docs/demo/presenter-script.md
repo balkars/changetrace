@@ -12,6 +12,7 @@ Run the checklist in `docs/demo/meeting-script.md` → *Before the meeting*: res
 
 Also, found in the dry run:
 
+- **Dev A's assistant:** the plan is Claude Code. If `claude` can't log in, use Copilot for Dev A too — the rehearsal ran both developers on Copilot and every step worked; just say "Dev A and Dev B both use Copilot here, but the skill works the same in Claude Code and Codex."
 - **Log in to both assistants the day before.** Run `claude` once and complete login (the CLI on this laptop reported "OAuth session expired"). Run `copilot` once and complete login.
 - **Trust the demo folders in Copilot** so it loads them without a warning: start `copilot` in `demo-run\devB` once and choose to trust the folder.
 - **Copilot asks before each shell command.** When it asks to run `ct …`, choose "approve for this session" so later `ct` calls don't interrupt the story. Approve `python -m pytest` the same way.
@@ -116,12 +117,20 @@ If you are running long, shorten section 3 to one sentence and skip demo step 5f
 **Do (Dev A terminal):** `claude`, then type exactly:
 > Failed jobs take too long to recover. Find why and fix it.
 
-**Screen:** the assistant runs `ct explain worker/config.py` → `no records for worker/config.py`. It changes `RETRY_DELAY_SECONDS` from 2 to 0 and shows a draft record.
+**Screen:** the assistant reads the skill, runs `ct why RETRY_DELAY_SECONDS` → no records, changes `RETRY_DELAY_SECONDS` from 2 to 0, runs the tests and `ct check`, and says *"No decision records covered this setting … If you want one, I'll show you a draft first."*
 
 **Say while it works:**
-> "Notice it looked first — no decisions recorded for this file yet. Now it's drafting the *why*: problem, decision, what was ruled out, and the warning for the next person. I review it like any other change."
+> "Notice it looked first — nothing recorded for this setting yet, so nothing to protect."
 
-**Do:** approve the draft.
+**Do:** type exactly:
+> Yes, draft the decision record. Mention that immediate retries could burst against a downstream service that is down.
+
+**Screen:** a draft with Problem, Decided, Tried and ruled out, Assumptions, **Watch out** ("Immediate retries can burst against a downstream service that is down…"), Evidence — and the question "Should I run `ct capture --from-diff` with this draft and commit it?"
+
+**Say:**
+> "This is the *why*, written while the knowledge is fresh. I review it like any other change."
+
+**Do:** answer `yes`. Approve the `ct capture` and `git commit` commands when asked.
 
 **Screen:**
 ```
@@ -218,10 +227,18 @@ Do you want me to try one of these alternatives, or override CTX-001 anyway?
 
 **Do (Dev B terminal):**
 ```powershell
-ct why RETRY_DELAY_SECONDS
+ct explain worker/config.py
 ```
+(Use `explain` on the file, not `why` on the one setting: CTX-002 is about the new backoff settings, so `ct why RETRY_DELAY_SECONDS` shows only CTX-001.)
 
-**Screen:** if Dev B chose the alternative, CTX-001 is still current and `ct why` shows it with its evidence and `Observed: OBS-001 · dev · deployment 1 — Request burst on dev`. If Dev B overrode, it shows (dry-run output):
+**Screen:** both decisions for the file, current, with live evidence (rehearsal output):
+```
+CTX-002 · active · Dev B · … — Bounded exponential backoff after first immediate retry
+  Decided: Keep the first retry immediate. From the second retry, back off exponentially …
+CTX-001 · active · Dev A · … — Retry failed jobs immediately by default
+  Evidence: commit 8aa6865 · PR #1 · dev deploy 067194e · …
+  Observed: OBS-001 · dev · deployment 3 — Request burst on dev
+``` If Dev B overrode, it shows (dry-run output):
 ```
 CTX-002 · active · Dev B · … — Bounded exponential backoff for retries
   Chain: CTX-001 → CTX-002
