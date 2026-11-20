@@ -271,20 +271,29 @@ def test_cli_vault_build(worker, api, tmp_path):
     assert res.exit_code == 1 and "error:" in res.output
 
 
-@pytest.mark.parametrize("entry", ["C:victim.txt", "/victim.txt", "\victim.txt", "..\victim.txt", "../victim.txt"])
-def test_hostile_marker_entries_delete_nothing_outside_vault(entry, worker, api, tmp_path, monkeypatch):
-    cwd = tmp_path / "cwd"
-    cwd.mkdir()
-    monkeypatch.chdir(cwd)
-    out = tmp_path / "vault"
+def test_read_owned_drops_hostile_entries(tmp_path):
+    from changetrace.vault import _read_owned
+
+    entries = ["/victim.txt", r"\victim.txt", "C:victim.txt", r"..\victim.txt", "../victim.txt", "Keys/ok.md"]
+    (tmp_path / ".changetrace-vault").write_text(json.dumps({"files": entries}), encoding="utf-8")
+    assert _read_owned(tmp_path) == ["Keys/ok.md"]
+
+
+def test_drive_relative_marker_entries_delete_nothing_outside_vault(worker, api, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    out = Path("vault")
     build_vault(_repos(worker, api), out, gh_for=_no_gh)
-    victims = [tmp_path / "victim.txt", cwd / "victim.txt"]
-    for v in victims:
-        v.write_text("keep", encoding="utf-8")
+    victim = tmp_path / "victim.txt"
+    victim_dir = tmp_path / "victim_dir"
+    nested = victim_dir / "victim.txt"
+    victim_dir.mkdir()
+    victim.write_text("keep", encoding="utf-8")
+    nested.write_text("keep", encoding="utf-8")
     marker = json.loads((out / ".changetrace-vault").read_text(encoding="utf-8"))
-    marker["files"].append(entry)
+    marker["files"] += ["C:victim.txt", "C:victim_dir/victim.txt"]
     (out / ".changetrace-vault").write_text(json.dumps(marker), encoding="utf-8")
     build_vault(_repos(worker, api), out, gh_for=_no_gh)
-    assert all(v.read_text(encoding="utf-8") == "keep" for v in victims)
+    assert victim.read_text(encoding="utf-8") == "keep"
+    assert nested.read_text(encoding="utf-8") == "keep"
+    assert victim_dir.is_dir()
     assert (out / "Keys/RETRY_DELAY_SECONDS.md").is_file()
-    assert entry not in json.loads((out / ".changetrace-vault").read_text(encoding="utf-8"))["files"]
