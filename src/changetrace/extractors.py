@@ -85,29 +85,67 @@ def _evaluate(node: ast.AST) -> str | None:
     try:
         for fn in reversed(applied):
             value = fn(value)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError, RecursionError):
         return None
     return normalize_value(value)
 
 
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+
+
+def _bound_names(node: ast.AST) -> set[str]:
+    """Names bound anywhere under node at module scope (function/class bodies excluded)."""
+    names: set[str] = set()
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if isinstance(n, _SCOPES):
+            if not isinstance(n, ast.Lambda):
+                names.add(n.name)
+            continue
+        if isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)):
+            names.add(n.id)
+        elif isinstance(n, (ast.Global, ast.Nonlocal)):
+            names.update(n.names)
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            names.add(n.name)
+        elif isinstance(n, (ast.Import, ast.ImportFrom)):
+            for alias in n.names:
+                names.add((alias.asname or alias.name).split(".")[0])
+        elif isinstance(n, (ast.MatchAs, ast.MatchStar)) and n.name:
+            names.add(n.name)
+        elif isinstance(n, ast.MatchMapping) and n.rest:
+            names.add(n.rest)
+        stack.extend(ast.iter_child_nodes(n))
+    return names
+
+
 def _py_assignments(text: str) -> dict[str, str | None] | None:
-    """Last module-level value per name (None when not a plain constant); None on parse error."""
+    """Value per module-level name (None when not a plain top-level constant assignment,
+    including any other kind of binding); None on parse error."""
     try:
         tree = ast.parse(text)
-    except (SyntaxError, ValueError):
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
         return None
     out: dict[str, str | None] = {}
+    tainted: set[str] = set()
     for stmt in tree.body:
+        plain = False
         if isinstance(stmt, ast.Assign):
             targets, value = stmt.targets, stmt.value
+            plain = all(isinstance(t, ast.Name) for t in targets)
         elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
             targets, value = [stmt.target], stmt.value
-        else:
-            continue
-        val = _evaluate(value)
-        for t in targets:
-            if isinstance(t, ast.Name):
+            plain = isinstance(stmt.target, ast.Name)
+        if plain:
+            tainted |= _bound_names(value)  # walrus inside the value
+            val = _evaluate(value)
+            for t in targets:
                 out[t.id] = val
+        else:
+            tainted |= _bound_names(stmt)
+    for name in tainted:
+        out[name] = None
     return out
 
 
@@ -173,8 +211,15 @@ def extract_value(filename: str, text: str, key: str) -> Extracted:
     if kind == "env":
         pairs = _env_pairs(text)
         return Extracted("found", pairs[key]) if key in pairs else Extracted("missing")
-    m = re.search(rf"^\s*{re.escape(key)}\s*[:=]\s*(.+?)\s*$", text, re.MULTILINE)
-    return Extracted("found", normalize_value(m.group(1))) if m else Extracted("missing")
+    found = [
+        normalize_value(m.group(1))
+        for m in re.finditer(rf"^\s*{re.escape(key)}\s*[:=]\s*(.+?)\s*$", text, re.MULTILINE)
+    ]
+    if not found:
+        return Extracted("missing")
+    if any(not values_equal(found[0], other) for other in found[1:]):
+        return Extracted("unreadable")
+    return Extracted("found", found[-1])
 
 
 def read_keys(filename: str, text: str) -> dict[str, str]:

@@ -117,3 +117,54 @@ def test_changed_keys_new_file_and_added_key_sorted():
 ])
 def test_python_builtin_applied_to_literal(src, expected):
     assert extract_value("c.py", src, "X") == expected
+
+
+@pytest.mark.parametrize("src", [
+    "RETRY_DELAY_SECONDS = 0\nRETRY_DELAY_SECONDS += 2\n",
+    "import os\nif os.name:\n    RETRY_DELAY_SECONDS = 2\n",
+    "try:\n    RETRY_DELAY_SECONDS = 2\nexcept Exception:\n    pass\n",
+    "RETRY_DELAY_SECONDS = 0\nfor i in range(2):\n    RETRY_DELAY_SECONDS = 2\n",
+    "RETRY_DELAY_SECONDS = 0\nwhile False:\n    RETRY_DELAY_SECONDS = 2\n",
+    "RETRY_DELAY_SECONDS = 0\nwith open('x') as f:\n    RETRY_DELAY_SECONDS = 2\n",
+    "RETRY_DELAY_SECONDS = 0\nA, RETRY_DELAY_SECONDS = 1, 2\n",
+    "RETRY_DELAY_SECONDS = 0\n[A, RETRY_DELAY_SECONDS] = 1, 2\n",
+    "RETRY_DELAY_SECONDS = 0\nA, *RETRY_DELAY_SECONDS = 1, 2\n",
+    "RETRY_DELAY_SECONDS = 0\nfor RETRY_DELAY_SECONDS in range(3):\n    pass\n",
+    "RETRY_DELAY_SECONDS = 0\nwith open('x') as RETRY_DELAY_SECONDS:\n    pass\n",
+    "RETRY_DELAY_SECONDS = 0\ntry:\n    pass\nexcept Exception as RETRY_DELAY_SECONDS:\n    pass\n",
+    "RETRY_DELAY_SECONDS = 0\nprint((RETRY_DELAY_SECONDS := 2))\n",
+    "RETRY_DELAY_SECONDS = 0\nglobal RETRY_DELAY_SECONDS\n",
+    "RETRY_DELAY_SECONDS = 0\ndel RETRY_DELAY_SECONDS\n",
+    "RETRY_DELAY_SECONDS = 0\nmatch 1:\n    case 1:\n        RETRY_DELAY_SECONDS = 2\n",
+    "RETRY_DELAY_SECONDS = 0\nif True:\n    pass\nelse:\n    RETRY_DELAY_SECONDS: int = 2\n",
+    "X = int(1e400)\nRETRY_DELAY_SECONDS = int(1e400)\n",
+])
+def test_non_plain_python_binding_is_unreadable(src):
+    assert extract_value("worker/config.py", src, "RETRY_DELAY_SECONDS") == Extracted("unreadable")
+
+
+def test_function_and_class_bodies_are_ignored():
+    src = (
+        "RETRY_DELAY_SECONDS = 0\n"
+        "def f():\n    RETRY_DELAY_SECONDS = 2\n    return RETRY_DELAY_SECONDS\n"
+        "class C:\n    RETRY_DELAY_SECONDS = 3\n"
+    )
+    assert extract_value("c.py", src, "RETRY_DELAY_SECONDS") == Extracted("found", "0")
+
+
+def test_plain_last_assignment_still_wins():
+    src = "RETRY_DELAY_SECONDS = 2\nOTHER = 1\nRETRY_DELAY_SECONDS = 0\n"
+    assert extract_value("c.py", src, "RETRY_DELAY_SECONDS") == Extracted("found", "0")
+
+
+def test_conversion_overflow_is_unreadable():
+    assert extract_value("c.py", "K = int(1e400)\n", "K") == Extracted("unreadable")
+
+
+def test_duplicate_regex_keys_that_disagree_are_unreadable():
+    assert extract_value("settings.ini", "RATE=120\nRATE=60\n", "RATE") == Extracted("unreadable")
+
+
+def test_duplicate_regex_keys_that_agree_are_found():
+    got = extract_value("settings.ini", "RATE=60\nRATE = 60.0\n", "RATE")
+    assert got.status == "found" and values_equal(got.value, "60")

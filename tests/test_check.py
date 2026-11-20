@@ -235,3 +235,12 @@ def test_superseding_record_also_reported_as_new_decision(scenario):
     assert any(x.kind == "info" and x.message.startswith("new decision: CTX-002") for x in f)
     assert not has_conflict(f)
     assert "2 linked decisions · 0 conflicts" in format_markdown(f, {r.id: r for r in load_records(b)})
+
+
+def test_augmented_assignment_is_a_warning_not_silence(scenario):
+    dev_a_ships_ctx001(scenario)
+    b = scenario.dev_b
+    p = b / "worker" / "config.py"
+    write(b, "worker/config.py", p.read_text(encoding="utf-8") + "RETRY_DELAY_SECONDS += 2\n")
+    f = run_check(b)
+    assert [x.kind for x in f] == ["warning"] and "cannot verify" in f[0].message
