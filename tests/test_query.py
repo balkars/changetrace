@@ -103,3 +103,28 @@ def test_observations_are_evidence(scenario):
     assert not any(v.record.kind == "observation" for v in views)
     assert "Observed: OBS-001 · dev · deployment 1 — Request burst on dev" in format_views(views)
     assert "OBS-001 Request burst on dev (observation about CTX-001)" in [e.text for e in history(b, "RETRY_DELAY_SECONDS")]
+
+
+def test_why_matches_record_id(scenario):
+    dev_a_ships_ctx001(scenario)
+    assert [v.record.id for v in why(scenario.dev_b, "CTX-001")] == ["CTX-001"]
+
+
+def test_why_record_id_follows_supersession(scenario):
+    dev_a_ships_ctx001(scenario); b = scenario.dev_b
+    supersede(b, "CTX-001", "---\ntitle: Controlled backoff\nguards: []\ntouches: [worker/config.py#RETRY_BACKOFF_MAX_SECONDS]\n---\n\n## Decided\nBackoff.\n")
+    assert [v.record.id for v in why(b, "CTX-001")] == ["CTX-002", "CTX-001"]
+
+
+def test_why_observation_id_shows_decision_it_is_about(scenario):
+    from changetrace.capture import observe
+    dev_a_ships_ctx001(scenario); b = scenario.dev_b
+    observe(b, ["CTX-001"], "dev", "1", "---\ntitle: Request burst on dev\n---\n\n## Observed\nBurst.\n")
+    views = why(b, "OBS-001")
+    assert [v.record.id for v in views] == ["CTX-001"]
+    assert "Observed: OBS-001" in format_views(views)
+
+
+def test_why_unknown_record_id_is_empty(scenario):
+    dev_a_ships_ctx001(scenario)
+    assert why(scenario.dev_b, "CTX-999") == []

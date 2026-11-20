@@ -118,6 +118,8 @@ def _views(repo: Path, records: list[Record], gh: GitHub | None) -> list[RecordV
 
 
 def _matches_why(rec: Record, target: str) -> bool:
+    if target == rec.id:
+        return True
     for g in rec.guards:
         if target in (g.key, g.file, f"{g.file}#{g.key}"):
             return True
@@ -130,7 +132,10 @@ def _matches_why(rec: Record, target: str) -> bool:
 
 def why(repo: Path, target: str, gh: GitHub | None = None) -> list[RecordView]:
     repo = Path(repo)
-    return _views(repo, [r for r in load_records(repo) if _matches_why(r, target)], gh)
+    all_records = load_records(repo)
+    # An observation id shows the decision(s) it is about, with the observation attached.
+    about = {a for o in all_records if o.kind == "observation" and o.id == target for a in o.about}
+    return _views(repo, [r for r in all_records if r.id in about or _matches_why(r, target)], gh)
 
 
 def explain(repo: Path, path: str, gh: GitHub | None = None) -> list[RecordView]:
