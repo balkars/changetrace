@@ -141,7 +141,7 @@ CTX-001 · active · Dev A · 2026-11-20 — Immediate retry for failed jobs
   Observed: OBS-001 · dev · deployment 3 — Request burst on dev
 ```
 
-`ct why` takes a setting name, `file#SETTING` or a file path. `ct explain <file>` lists every record about a file. Newer decisions come first; replaced ones follow, marked `superseded`.
+`ct why` takes a setting name, `file#SETTING`, a file path, or a record id (`CTX-001` shows that decision and anything that replaced it; `OBS-001` shows the decision the observation is about). `ct explain <file>` lists every record about a file. Newer decisions come first; replaced ones follow, marked `superseded`.
 
 ### 3. Check a change
 
@@ -344,7 +344,7 @@ The vault is a read-only view: every note says *edit in the repository, not here
 | `ct capture [--from-diff] [--input FILE\|-]` | Record a decision |
 | `ct supersede OLD_ID [--from-diff] [--input FILE\|-]` | Replace a decision |
 | `ct observe --about ID --env ENV [--deployment N] [--input FILE\|-]` | Record an observation |
-| `ct why TARGET` | Records behind a setting, `file#SETTING` or file |
+| `ct why TARGET` | Records behind a setting, `file#SETTING`, file or record id |
 | `ct explain PATH` | Records that touch a file |
 | `ct check [--base REF] [--staged] [--file PATH] [--format text\|json\|markdown]` | Conflict check (exit 1 on conflict) |
 | `ct history --key KEY` | Timeline of a setting |
