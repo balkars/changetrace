@@ -141,7 +141,7 @@ Saved CTX-001 → .context/decisions/CTX-001-immediate-retry-for-failed-jobs.md
 **Say:**
 > "Prose for humans, and one structured line the tool can check. It's committed in the same commit as the code."
 
-**Do:** push and open the PR (commands in the runbook, step 1).
+**Do:** create the branch with `git switch -c fix-retry-delay` (works whether or not the assistant already committed), then push and open the PR (commands in the runbook, step 1).
 
 ### 5b. Review — 0:14 (1.5 min)
 
@@ -179,7 +179,7 @@ Saved CTX-001 → .context/decisions/CTX-001-immediate-retry-for-failed-jobs.md
 
 ### 5e. Dev B wants the old value back — 0:18 (3.5 min) — **the key moment**
 
-**Do (Dev B terminal):** `git pull`, `copilot`, then type exactly:
+**Do (Dev B terminal):** `git pull`, then `git switch -c fix-payments-bursts` (before the assistant starts), then `copilot`, and type exactly:
 > Retries are hammering the payments API. Set RETRY_DELAY_SECONDS back to 2.
 
 **Screen:** the assistant reads the skill, runs `ct why RETRY_DELAY_SECONDS`, and stops **without editing anything**. In the dry run Copilot replied (abridged):
@@ -236,7 +236,10 @@ CTX-002 · active · Dev B · … — Bounded exponential backoff after first im
 CTX-001 · active · Dev A · … — Retry failed jobs immediately by default
   Evidence: commit 8aa6865 · PR #1 · dev deploy 067194e · …
   Observed: OBS-001 · dev · deployment 3 — Request burst on dev
-``` If Dev B overrode, it shows (dry-run output):
+```
+
+If Dev B overrode, it shows (dry-run output):
+
 ```
 CTX-002 · active · Dev B · … — Bounded exponential backoff for retries
   Chain: CTX-001 → CTX-002
@@ -264,7 +267,7 @@ Optional if time allows: `ct history --key RETRY_DELAY_SECONDS`.
 **Do:** scroll the proposal to *08 · Implementation*.
 
 **Say:**
-> "What you saw is built and tested — about 195 automated tests. The decision records, the check, the skill, the Claude hook, the GitHub PR and deploy workflows. Slack notifications for PRs and deployments are built too; we'll connect them during the pilot."
+> "What you saw is built and tested — over 200 automated tests. The decision records, the check, the skill, the Claude hook, the GitHub PR and deploy workflows. Slack notifications for PRs and deployments are built too; we'll connect them during the pilot."
 >
 > "What's next, in order: connecting Slack, the cross-repo Obsidian view, and a Slack 'why' bot; then support for the languages and config formats our real services use — today it reads Python, YAML, JSON, TOML and .env."
 >

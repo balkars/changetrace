@@ -48,7 +48,11 @@ Answer, word for word:
 
 Screen: the draft (Problem, Decided, Tried and ruled out, Assumptions, Watch out, Evidence) and a question. Answer `yes`, and approve the `ct capture` and `git commit` commands when asked. The assistant saves CTX-001 and commits it with the code.
 
-Then open the pull request (Dev A terminal, still in `demo-run\devA`):
+Then open the pull request (Dev A terminal, still in `demo-run\devA`). First put the work on a branch (this works whether or not the assistant already committed):
+
+```powershell
+git switch -c fix-retry-delay
+```
 
 ```powershell
 git push -u origin HEAD
@@ -110,6 +114,15 @@ Dev B terminal:
 ```powershell
 cd demo-run\devB
 git pull
+```
+
+Create the branch before the assistant starts (this works whether or not the assistant commits later):
+
+```powershell
+git switch -c fix-payments-bursts
+```
+
+```powershell
 copilot
 ```
 
