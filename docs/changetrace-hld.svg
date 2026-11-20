@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1040" width="1600" height="1040" role="img" aria-labelledby="t d">
+  <title id="t">ChangeTrace — high-level design (as built)</title>
+  <desc id="d">Developers and their assistants use a shared Agent Skill and a Claude Code hook to run the ct CLI. ct reads and writes decision records committed in the service repository, runs a deterministic conflict check, and pulls PR and deployment evidence from GitHub. GitHub workflows run ct on every pull request and dev deployment. An Obsidian vault and Slack are views on top.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#6f8199" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: "Segoe UI", Inter, system-ui, -apple-system, sans-serif; fill: #15263b; }
+      .h1 { font-size: 28px; font-weight: 700; }
+      .sub { font-size: 15px; fill: #5b6b80; }
+      .kick { font-size: 12px; font-weight: 700; letter-spacing: 1.4px; fill: #5b6b80; }
+      .kick-g { fill: #0b7d66; } .kick-b { fill: #2a62b8; } .kick-p { fill: #6a52b5; }
+      .ttl { font-size: 19px; font-weight: 700; }
+      .ttl-s { font-size: 16px; font-weight: 700; }
+      .txt { font-size: 14px; fill: #3d4f66; }
+      .sm { font-size: 13px; fill: #5b6b80; }
+      .mono { font-family: Consolas, "Cascadia Mono", ui-monospace, monospace; font-size: 13px; fill: #0b6f5c; }
+      .lab { font-size: 12.5px; fill: #4a5b72; font-weight: 600; }
+      .card { fill: #ffffff; stroke: #d3dce7; stroke-width: 1.5; }
+      .canon { fill: #ecf8f4; stroke: #5fb79f; stroke-width: 2; }
+      .core { fill: #eef4ff; stroke: #7aa1df; stroke-width: 2; }
+      .mod { fill: #ffffff; stroke: #c4d5ef; stroke-width: 1.3; }
+      .view { fill: #f5f2ff; stroke: #a99ade; stroke-width: 1.5; }
+      .park { fill: #fafbfc; stroke: #a7b3c2; stroke-width: 1.5; stroke-dasharray: 7 6; }
+      .ln { stroke: #6f8199; stroke-width: 2; fill: none; }
+      .ln-d { stroke: #8e9bad; stroke-width: 2; fill: none; stroke-dasharray: 7 6; }
+      .band { fill: #f1f4f8; }
+      .pill { fill: #ffffff; stroke: #d3dce7; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1040" fill="#f7f9fc"/>
+
+  <!-- Title -->
+  <text x="60" y="48" class="h1">ChangeTrace — high-level design (as built)</text>
+  <text x="60" y="74" class="sub">Engineering decisions travel with the code; any assistant checks them before an edit undoes one.</text>
+
+  <!-- Row 1: developer surfaces -->
+  <rect x="60" y="100" width="440" height="104" rx="14" class="card"/>
+  <text x="84" y="128" class="kick kick-b">DEV A · CAPTURE</text>
+  <text x="84" y="154" class="ttl">Claude Code</text>
+  <text x="84" y="178" class="txt">Fixes slow recovery: retry delay 2 → 0</text>
+  <text x="84" y="196" class="sm">Approves the drafted decision record</text>
+
+  <rect x="580" y="100" width="440" height="104" rx="14" class="card"/>
+  <text x="604" y="128" class="kick kick-b">DEV B · CHECK</text>
+  <text x="604" y="154" class="ttl">GitHub Copilot CLI</text>
+  <text x="604" y="178" class="txt">Asks to set the delay back to 2</text>
+  <text x="604" y="196" class="sm">Assistant stops, cites CTX-001, offers backoff</text>
+
+  <rect x="1100" y="100" width="440" height="104" rx="14" class="card"/>
+  <text x="1124" y="128" class="kick">ANY AGENT-SKILLS ASSISTANT</text>
+  <text x="1124" y="154" class="ttl">Codex and others</text>
+  <text x="1124" y="178" class="txt">Same skill, same ct commands</text>
+  <text x="1124" y="196" class="sm">No assistant owns the record format</text>
+
+  <!-- Row 2: assistant integration -->
+  <rect x="60" y="250" width="360" height="100" rx="14" class="card"/>
+  <text x="84" y="278" class="kick">CLAUDE CODE HOOK</text>
+  <text x="84" y="302" class="ttl-s">PostToolUse · Edit | Write</text>
+  <text x="84" y="324" class="mono">ct hook claude</text>
+  <text x="84" y="342" class="sm">Exit 2 on conflict or warning</text>
+
+  <rect x="460" y="250" width="1080" height="100" rx="14" class="card"/>
+  <text x="484" y="278" class="kick">AGENT SKILL · .agents/skills + .claude/skills → changetrace/SKILL.md</text>
+  <text x="484" y="303" class="txt">1  Look up before editing — ct why / ct explain</text>
+  <text x="484" y="323" class="txt">2  Would undo an active decision? Stop, explain, offer alternatives, ask — a change request is not consent</text>
+  <text x="484" y="343" class="txt">3  Draft the record → developer says yes → ct capture / ct supersede, committed with the code</text>
+
+  <!-- Row 1 → Row 2 -->
+  <path d="M200 204 V246" class="ln" marker-end="url(#a)"/>
+  <path d="M400 204 L560 246" class="ln" marker-end="url(#a)"/>
+  <path d="M800 204 V246" class="ln" marker-end="url(#a)"/>
+  <path d="M1320 204 V246" class="ln" marker-end="url(#a)"/>
+
+  <!-- Row 3: repo · ct · GitHub -->
+  <!-- Canonical repo -->
+  <rect x="60" y="400" width="380" height="270" rx="16" class="canon"/>
+  <text x="84" y="430" class="kick kick-g">CANONICAL SOURCE</text>
+  <text x="84" y="456" class="ttl">Service repository (Git)</text>
+  <text x="84" y="484" class="mono">worker/config.py</text>
+  <text x="84" y="504" class="mono">.context/decisions/CTX-001-….md</text>
+  <text x="84" y="524" class="mono">.context/observations/OBS-001-….md</text>
+  <text x="84" y="544" class="mono">.agents/skills · .claude/settings.json</text>
+  <text x="84" y="564" class="mono">.github/workflows/*.yml</text>
+  <rect x="84" y="582" width="332" height="38" rx="8" class="pill"/>
+  <text x="98" y="606" class="txt">guard: RETRY_DELAY_SECONDS = 0 (was 2)</text>
+  <text x="84" y="650" class="sm">Markdown + YAML · reviewed and committed with code</text>
+
+  <!-- ct core -->
+  <rect x="540" y="400" width="520" height="270" rx="16" class="core"/>
+  <text x="564" y="430" class="kick kick-b">ct CLI · PYTHON PACKAGE changetrace</text>
+  <text x="564" y="456" class="ttl">Context engine</text>
+  <rect x="560" y="472" width="232" height="88" rx="10" class="mod"/>
+  <text x="576" y="496" class="ttl-s">Record</text>
+  <text x="576" y="518" class="sm">capture · supersede · observe</text>
+  <text x="576" y="538" class="sm">secret scan · stable IDs</text>
+  <rect x="808" y="472" width="232" height="88" rx="10" class="mod"/>
+  <text x="824" y="496" class="ttl-s">Check (deterministic)</text>
+  <text x="824" y="518" class="sm">guards vs. diff · no AI</text>
+  <text x="824" y="538" class="sm">py · yaml · json · toml · .env</text>
+  <rect x="560" y="572" width="232" height="84" rx="10" class="mod"/>
+  <text x="576" y="596" class="ttl-s">Query</text>
+  <text x="576" y="618" class="sm">why · explain · history</text>
+  <text x="576" y="638" class="sm">dev-since · evidence links</text>
+  <rect x="808" y="572" width="232" height="84" rx="10" class="mod"/>
+  <text x="824" y="596" class="ttl-s">Operate</text>
+  <text x="824" y="618" class="sm">init · validate · deploy report</text>
+  <text x="824" y="638" class="sm">vault build · notify slack</text>
+
+  <!-- GitHub -->
+  <rect x="1160" y="400" width="380" height="270" rx="16" class="card"/>
+  <text x="1184" y="430" class="kick">CHANGE LIFECYCLE</text>
+  <text x="1184" y="456" class="ttl">GitHub + Actions</text>
+  <text x="1184" y="486" class="ttl-s">PR workflow</text>
+  <text x="1184" y="506" class="sm">ct validate + ct check → sticky PR comment</text>
+  <text x="1184" y="524" class="sm">"1 linked decision · 0 conflicts"</text>
+  <text x="1184" y="556" class="ttl-s">deploy-dev workflow</text>
+  <text x="1184" y="576" class="sm">environment dev → GitHub Deployment</text>
+  <text x="1184" y="594" class="sm">ct deploy report → job summary</text>
+  <text x="1184" y="626" class="ttl-s">API via gh</text>
+  <text x="1184" y="646" class="sm">PRs and deployments for each record</text>
+
+  <!-- Row 2 → ct -->
+  <path d="M300 350 L600 396" class="ln" marker-end="url(#a)"/>
+  <text x="352" y="388" class="lab">ct check --file</text>
+  <path d="M800 350 V396" class="ln" marker-end="url(#a)"/>
+  <text x="812" y="380" class="lab">assistant runs ct</text>
+
+  <!-- repo ↔ ct -->
+  <path d="M444 500 H536" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="490" y="490" class="lab" text-anchor="middle">records</text>
+  <path d="M444 590 H536" class="ln" marker-end="url(#a)"/>
+  <text x="490" y="580" class="lab" text-anchor="middle">code values</text>
+
+  <!-- ct ↔ GitHub -->
+  <path d="M1156 500 H1064" class="ln" marker-end="url(#a)"/>
+  <text x="1110" y="490" class="lab" text-anchor="middle">evidence</text>
+  <path d="M1064 590 H1156" class="ln" marker-end="url(#a)"/>
+  <text x="1110" y="580" class="lab" text-anchor="middle">CI runs ct</text>
+
+  <!-- repo → GitHub (under row 3) -->
+  <path d="M250 670 V700 H1350 V674" class="ln" marker-end="url(#a)"/>
+  <rect x="680" y="689" width="240" height="22" rx="11" fill="#f7f9fc"/>
+  <text x="800" y="705" class="lab" text-anchor="middle">git push · pull request · merge</text>
+
+  <!-- Row 4: views -->
+  <rect x="60" y="760" width="700" height="130" rx="16" class="view"/>
+  <text x="84" y="790" class="kick kick-p">TEAM VIEW · BUILT</text>
+  <text x="84" y="816" class="ttl">Obsidian team vault</text>
+  <text x="84" y="840" class="txt">ct vault build --hub hub.yml: many repos → one vault — decisions, observations,</text>
+  <text x="84" y="860" class="txt">deployments, key and file hubs, Bases dashboard, backlinks and graph</text>
+  <text x="84" y="880" class="sm">Read-only view · never deletes or overwrites your own notes</text>
+
+  <rect x="840" y="760" width="700" height="130" rx="16" class="park"/>
+  <text x="864" y="790" class="kick">TEAM CHANNEL · BUILT, NOT YET CONNECTED</text>
+  <text x="864" y="816" class="ttl">Slack</text>
+  <text x="864" y="840" class="txt">#engineering-prs — PR summary with the record's Watch out</text>
+  <text x="864" y="860" class="txt">#engineering-dev — dev deployment digest (PRs, records)</text>
+  <text x="864" y="880" class="sm">Incoming webhooks from Actions · secret URL never printed</text>
+
+  <!-- ct → vault, GitHub → Slack -->
+  <path d="M640 670 V756" class="ln" marker-end="url(#a)"/>
+  <text x="652" y="740" class="lab">ct vault build</text>
+  <path d="M1470 674 V756" class="ln-d" marker-end="url(#a)"/>
+  <text x="1458" y="740" class="lab" text-anchor="end">webhooks</text>
+
+  <!-- Legend + principles -->
+  <rect x="60" y="930" width="1480" height="70" rx="14" class="band"/>
+  <path d="M88 958 H140" class="ln" marker-end="url(#a)"/>
+  <text x="152" y="963" class="sm">built and demoed</text>
+  <path d="M290 958 H342" class="ln-d" marker-end="url(#a)"/>
+  <text x="354" y="963" class="sm">built, not yet connected</text>
+  <rect x="540" y="948" width="34" height="20" rx="5" class="canon"/>
+  <text x="584" y="963" class="sm">source of truth</text>
+  <text x="88" y="988" class="sm">Git is authoritative · the check is deterministic, so wording can't hide a revert · records are append-only (supersede, never edit) · everything still works offline from the clone</text>
+</svg>
