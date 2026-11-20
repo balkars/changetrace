@@ -242,3 +242,13 @@ def test_marked_repo_root_is_still_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(demo_reset, "ROOT", fake_root.resolve())
     assert demo_reset.main(["--run-dir", "."]) == 2
     assert (fake_root / "keep.py").exists()
+
+
+def test_reset_builds_api_clone_with_ctx001(tmp_path):
+    run = tmp_path / "run"
+    assert demo_reset.main(["--no-push", "--run-dir", str(run)]) == 0
+    api = run / "api"
+    assert (api / ".context" / "decisions" / "CTX-001-raise-api-rate-limit.md").is_file()
+    assert "requests_per_minute: 120" in (api / "api" / "settings.yaml").read_text(encoding="utf-8")
+    assert not (api / ".github" / "workflows").exists()
+    assert _git(api, "config", "--local", "user.name") == "Dev B"

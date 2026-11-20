@@ -329,3 +329,24 @@ def slack_pr(number, repo):
             pass
     payload = pr_payload(pr, records, run_check(repo), _repo_url(repo), cfg.project)
     post_webhook(os.environ.get("SLACK_WEBHOOK_URL"), payload)
+
+
+@main.group()
+def vault() -> None:
+    """Obsidian team vault."""
+
+
+@vault.command("build")
+@click.option("--hub", "hub_file", type=click.Path(dir_okay=False, exists=True), required=True,
+              help="hub.yml listing the repositories.")
+@click.option("--out", type=click.Path(file_okay=False), required=True, help="Vault folder to build into.")
+def vault_build(hub_file, out):
+    """Build a read-only Obsidian vault from the repositories listed in a hub file."""
+    from .vault import build_vault, load_hub
+
+    try:
+        written = build_vault(load_hub(Path(hub_file)), Path(out))
+    except (ValueError, OSError, RecordError, GitError) as e:
+        click.echo(f"error: {e}", err=True)
+        sys.exit(1)
+    click.echo(f"Built {len(written)} files in {out}")
