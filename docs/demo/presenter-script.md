@@ -8,7 +8,7 @@ What to say, what to do, and what the room should see, minute by minute. Use it 
 
 ## Before you start (10 minutes before)
 
-Run the checklist in `docs/demo/meeting-script.md` → *Before the meeting*: reset the demo, load `demo-env.ps1` in all three terminals, `gh auth status`, open Slack (`#engineering-prs`, `#engineering-dev`), open the demo repo's Pull requests and Actions tabs, cue the backup recording.
+Run the checklist in `docs/demo/meeting-script.md` → *Before the meeting*: reset the demo, load `demo-env.ps1` in all three terminals, `gh auth status`, open the demo repo's Pull requests and Actions tabs, cue the backup recording.
 
 Also, found in the dry run:
 
@@ -26,7 +26,6 @@ Windows to arrange, left to right:
 | Dev A terminal | `demo-run\devA`, Claude Code |
 | Dev B terminal | `demo-run\devB`, Copilot CLI |
 | Browser | GitHub demo repo: PR, Actions, Environments |
-| Slack | `#engineering-prs` and `#engineering-dev` |
 
 Font size: terminals at 16pt or larger. Close notifications.
 
@@ -110,7 +109,7 @@ If you are running long, shorten section 3 to one sentence and skip demo step 5f
 ## 5. Live demo — 0:10 (13 min)
 
 **Say:**
-> "Let's run the story for real. Two clones of the same repo on this laptop — think of them as two developers' machines. Dev A uses Claude Code, Dev B uses Copilot CLI. The repo, the pull request, the deployment and the Slack channels are real."
+> "Let's run the story for real. Two clones of the same repo on this laptop — think of them as two developers' machines. Dev A uses Claude Code, Dev B uses Copilot CLI. The repo, the pull request and the deployment are real."
 
 ### 5a. Dev A fixes slow recovery — 0:11 (3 min)
 
@@ -144,7 +143,7 @@ Saved CTX-001 → .context/decisions/CTX-001-immediate-retry-for-failed-jobs.md
 
 **Do:** push and open the PR (commands in the runbook, step 1).
 
-### 5b. Review and Slack — 0:14 (1.5 min)
+### 5b. Review — 0:14 (1.5 min)
 
 **Do:** switch to the browser → the PR.
 
@@ -156,7 +155,6 @@ Saved CTX-001 → .context/decisions/CTX-001-immediate-retry-for-failed-jobs.md
   - Decided: Default RETRY_DELAY_SECONDS is 0, so a failed job retries immediately.
   - Watch out: Restoring 2 brings back slow recovery. Immediate retries can burst against an unavailable downstream dependency.
 ```
-Slack `#engineering-prs` shows the PR summary with the same warning.
 
 **Say:**
 > "The reviewer gets the reasoning without asking Dev A. So does the team channel."
@@ -168,7 +166,7 @@ Slack `#engineering-prs` shows the PR summary with the same warning.
 **Say while it runs (~40s):**
 > "Merging deploys to our dev environment. The deploy step here is a stand-in that runs the tests — this is where our real deploy would go."
 
-**Screen:** GitHub shows a `dev` deployment. Slack `#engineering-dev`: *Dev deployment #… · PR #1 · CTX-001 Immediate retry · Known consideration: …bursts…*
+**Screen:** GitHub shows a `dev` deployment. Open the run's summary (or the `ct deploy report` step log): *Deployed … to dev (run N) · PRs: #1 … · Decision records: CTX-001 …*. Note the run number N — you need it in 5d.
 
 ### 5d. Something goes wrong on dev — 0:17 (1 min)
 
@@ -257,7 +255,6 @@ Optional if time allows: `ct history --key RETRY_DELAY_SECONDS`.
 
 ### 5g. Optional extras (only if built and time allows)
 
-- Slack: `/ct why RETRY_DELAY_SECONDS` — same answer in the team channel.
 - Obsidian: open the generated vault — the decision chain, the observation, and a second service side by side.
 
 ---
@@ -267,9 +264,9 @@ Optional if time allows: `ct history --key RETRY_DELAY_SECONDS`.
 **Do:** scroll the proposal to *08 · Implementation*.
 
 **Say:**
-> "What you saw is built and tested — about 195 automated tests. The decision records, the check, the skill, the Claude hook, the GitHub PR and deploy workflows, Slack notifications."
+> "What you saw is built and tested — about 195 automated tests. The decision records, the check, the skill, the Claude hook, the GitHub PR and deploy workflows. Slack notifications for PRs and deployments are built too; we'll connect them during the pilot."
 >
-> "What's next, in order: the cross-repo Obsidian view and the Slack 'why' bot; then support for the languages and config formats our real services use — today it reads Python, YAML, JSON, TOML and .env."
+> "What's next, in order: connecting Slack, the cross-repo Obsidian view, and a Slack 'why' bot; then support for the languages and config formats our real services use — today it reads Python, YAML, JSON, TOML and .env."
 >
 > "Risks we designed for: wrong AI summaries — every record is reviewed by the developer; secrets — capture refuses anything that looks like a key or token; stale context — records are never edited, only superseded; and integrations failing — the check works offline."
 
@@ -300,7 +297,7 @@ Optional if time allows: `ct history --key RETRY_DELAY_SECONDS`.
 
 ## Fallback
 
-- **Network, GitHub or Slack fails:** say "Let me show you the recording of this exact run," and play the backup from the current step. Don't debug live.
+- **Network or GitHub fails:** say "Let me show you the recording of this exact run," and play the backup from the current step. Don't debug live.
 - **Assistant goes off script:** run the `ct` command for that step yourself; the output is the same.
 - **Start over between rehearsals:** run the reset in the runbook.
 
@@ -312,7 +309,7 @@ Record each section as its own clip; it's easier to retake one.
 |---|---|---|
 | 1 | Sections 1–4 over the proposal page (voice + scroll) | ~10 min |
 | 2 | 5a Dev A + record | ~3 min |
-| 3 | 5b–5c PR, Slack, deploy | ~3 min |
+| 3 | 5b–5c PR and deploy | ~3 min |
 | 4 | 5d–5e Dev B warning and supersede | ~4.5 min |
 | 5 | 5f why + extras | ~1.5 min |
 | 6 | Sections 6–7 | ~5 min |

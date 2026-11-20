@@ -22,7 +22,6 @@ Two developers, one setting (`RETRY_DELAY_SECONDS`), one decision that gets chal
 gh auth status
 ```
 
-- [ ] Open Slack with `#engineering-prs` and `#engineering-dev` side by side. Both should be empty of new demo messages.
 - [ ] Open the demo worker repo on GitHub in a browser tab (Pull requests, Actions).
 - [ ] Open the rehearsal recording in a player, paused, in case the network fails.
 
@@ -59,9 +58,9 @@ git push -u origin HEAD
 gh pr create --fill --base main
 ```
 
-### 2. Pull request and Slack
+### 2. Pull request
 
-Screen: the PR on GitHub has the ChangeTrace comment naming CTX-001, its Decided and Watch out lines. `#engineering-prs` has the PR summary.
+Screen: the PR on GitHub has the ChangeTrace comment naming CTX-001, its Decided and Watch out lines.
 
 ### 3. Merge and deploy to dev
 
@@ -77,11 +76,11 @@ Watch the newest run (it may take a few seconds to appear):
 gh run watch (gh run list -L 1 --json databaseId -q '.[0].databaseId')
 ```
 
-Screen: the `deploy-dev` run finishes. GitHub shows a `dev` deployment. `#engineering-dev` has the digest naming the deployment number, the PR and CTX-001.
+Screen: the `deploy-dev` run finishes. GitHub shows a `dev` deployment. The run's summary (and the `ct deploy report` step log) names the run number, PR #1 and CTX-001.
 
 ### 4. Record what happened on dev
 
-Dev A terminal, in `demo-run\devA`. Use the deployment number from the Slack digest (shown here as 1; replace it).
+Dev A terminal, in `demo-run\devA`. Use the deploy run number from step 3 (shown here as 1; replace it).
 
 ```powershell
 @'
@@ -134,7 +133,7 @@ ct check --file worker/config.py
 
 Screen: exit code 1 and a conflict with CTX-001.
 
-### 6. Query from the terminal and from Slack
+### 6. Query from the terminal
 
 Dev B terminal, in `demo-run\devB`:
 
@@ -151,16 +150,6 @@ ct dev-since yesterday
 ```
 
 Screen: the decisions for the setting with the PR and dev deployment linked and `Observed: OBS-001 · dev · deployment 1 — Request burst on dev`. After the override path: CTX-002 current, CTX-001 superseded, chain CTX-001 → CTX-002.
-
-Slack bot (skip if not built). Presenter terminal (repo root):
-
-```powershell
-ct slack-bot
-```
-
-In Slack, type `/ct why RETRY_DELAY_SECONDS`, then `/ct dev-since yesterday`.
-
-Screen: same content as the CLI, formatted for Slack.
 
 ### 7. Obsidian vault (skip if not built)
 
@@ -182,4 +171,4 @@ Screen: CTX-001 to CTX-002 chain, OBS-001, the `RETRY_DELAY_SECONDS` key note, t
 
 ## Cut rule
 
-Skip any step whose feature is not built (marked "skip if not built" above: `ct slack-bot` and `ct vault build`). Do not announce it; go to the next step. Everything in steps 1 to 5 must work end to end; if one of them fails in rehearsal, fix it before the meeting rather than cutting it.
+Skip any step whose feature is not built (marked "skip if not built" above: `ct vault build`). Slack is not part of this demo. Do not announce it; go to the next step. Everything in steps 1 to 5 must work end to end; if one of them fails in rehearsal, fix it before the meeting rather than cutting it.
