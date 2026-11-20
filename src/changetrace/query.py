@@ -193,7 +193,7 @@ def _evidence_line(ev: Evidence) -> str:
     if ev.commit:
         parts.append(f"commit {_short(ev.commit)}")
     parts += [f"PR #{p['number']}" for p in ev.prs]
-    parts += [f"{d['env']} deploy {d['created_at'][:10]}" for d in ev.deployments]
+    parts += [f"{d.get('env') or 'dev'} deploy {_short(d['sha'])}" for d in ev.deployments]
     if ev.note:
         parts.append(ev.note)
     return " · ".join(parts) if parts else "none found"

@@ -29,7 +29,7 @@ def test_why_with_pr_and_deploy(scenario):
                  "api repos/o/r/deployments/9/statuses": [{"state": "success"}]})
     write(b, ".context/config.yml", "project: Worker service\ngithub: o/r\nenvironments: [dev]\n")
     text = format_views(why(b, "worker/config.py#RETRY_DELAY_SECONDS", GitHub("o/r", gh)))
-    assert "PR #1" in text and "dev deploy 2026-11-18" in text
+    assert "PR #1" in text and f"dev deploy {head[:7]}" in text
     assert "links unavailable" not in text
 
 

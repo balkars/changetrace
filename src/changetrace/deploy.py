@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from .github import GitHub, GitHubUnavailable
-from .gitops import git, is_ancestor, rev_list
-from .records import CONTEXT_DIR, Record, load_records
+from .gitops import git, is_ancestor, read_at, rev_list
+from .records import CONTEXT_DIR, Record, RecordError, parse_record
 
 
 _FIRST_DEPLOY_PR_LOOKUPS = 50
@@ -39,13 +39,27 @@ def _previous_sha(repo: Path, deployments: list[dict], sha: str) -> str | None:
 
 
 def _changed_records(repo: Path, prev_sha: str | None, sha: str) -> list[Record]:
-    records = load_records(repo)
+    """Records as they exist at `sha` (never the working tree): all of them for a first deployment,
+    otherwise those touched between prev_sha and sha."""
     if prev_sha is None:
-        return records
-    out = git(repo, "diff", "--name-only", f"{prev_sha}..{sha}", "--", f"{CONTEXT_DIR}/")
-    changed = {ln.strip() for ln in out.splitlines() if ln.strip()}
-    root = Path(repo).resolve()
-    return [r for r in records if r.path and Path(r.path).resolve().relative_to(root).as_posix() in changed]
+        out = git(repo, "ls-tree", "-r", "--name-only", sha, "--", f"{CONTEXT_DIR}/")
+        paths = [ln.strip() for ln in out.splitlines() if ln.strip()]
+    else:
+        out = git(repo, "diff", "--name-only", f"{prev_sha}..{sha}", "--", f"{CONTEXT_DIR}/")
+        paths = [ln.strip() for ln in out.splitlines() if ln.strip()]
+    records: list[Record] = []
+    for path in sorted(paths):
+        parts = path.split("/")
+        if len(parts) != 3 or parts[1] not in ("decisions", "observations") or not path.endswith(".md"):
+            continue
+        text = read_at(repo, sha, path)
+        if text is None:  # deleted at sha
+            continue
+        try:
+            records.append(parse_record(text, Path(repo) / path))
+        except RecordError as e:
+            raise RecordError(f"{path}: {e}") from e
+    return records
 
 
 def build_deploy_report(repo: Path, env: str, sha: str, gh: GitHub | None, run_number: str | None = None,

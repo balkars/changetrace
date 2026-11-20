@@ -65,6 +65,16 @@ def test_report_first_deployment_takes_all(scenario):
     assert [x.id for x in r.records] == ["CTX-001"]
 
 
+def test_first_deployment_records_are_those_at_deployed_sha(scenario):
+    initial, head, _ = _setup(scenario)
+    assert (scenario.dev_a / ".context/decisions").is_dir()  # working tree has CTX-001
+    gh = _fake(scenario, [])
+    first = build_deploy_report(scenario.dev_a, "dev", initial, gh)
+    assert first.prev_sha is None and first.records == []
+    later = build_deploy_report(scenario.dev_a, "dev", head, gh)
+    assert [x.id for x in later.records] == ["CTX-001"]
+
+
 def test_report_skips_non_ancestor_prev(scenario):
     initial, head, _ = _setup(scenario)
     gh = _fake(scenario, [(2, "deadbeef" * 5, "2026-11-18T10:00:00Z")])
