@@ -19,7 +19,7 @@ from helpers import CTX001_RECORD, commit_all, ctx001_draft, set_retry
 from changetrace.gitops import git
 
 WATCH = "Restoring 2 reintroduces slow recovery."
-URL = "https://hooks.slack.test/services/T000/B000/SECRET"
+URL = "https://hooks.slack.com/services/T000/B000/SECRET"
 
 
 def _record() -> Record:
@@ -110,6 +110,36 @@ def test_post_webhook_posts_json():
     assert json.loads(seen["body"].decode("utf-8")) == payload
     assert seen["ctype"] == "application/json" and seen["method"] == "POST"
     assert seen["url"] == URL and seen["timeout"] == 10
+
+
+def test_post_webhook_normalises_quotes_and_whitespace():
+    good = "https://hooks.slack.com/services/T/B/SECRET"
+    for raw in ('  "' + good + '"\n', "'" + good + "'"):
+        seen = {}
+
+        def opener(req, timeout=None):
+            seen["url"] = req.full_url
+            return _Resp()
+
+        assert post_webhook(raw, {"text": "x"}, opener=opener) is True
+        assert seen["url"] == good
+
+
+def test_post_webhook_rejects_non_slack_url_without_leaking(capsys):
+    calls = []
+    for bad in ("hooks.slack.com/services/T/B/SECRET", "https://example.com/SECRET"):
+        assert post_webhook(bad, {"text": "x"}, opener=lambda *a, **k: calls.append(a)) is False
+    assert calls == []
+    captured = capsys.readouterr()
+    expected = ("Slack post failed: SLACK_WEBHOOK_URL is not a Slack webhook URL "
+                "(expected https://hooks.slack.com/...; check the secret for extra text)")
+    assert captured.err.count(expected) == 2
+    assert "SECRET" not in captured.out + captured.err
+
+
+def test_post_webhook_blank_after_normalising_is_not_configured(capsys):
+    assert post_webhook(' "" \n', {"text": "x"}) is False
+    assert "Slack not configured — skipped" in capsys.readouterr().out
 
 
 def test_post_webhook_swallow_http_error(capsys):

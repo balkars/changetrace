@@ -18,6 +18,7 @@ from ..records import Record
 _TIMEOUT_SECONDS = 10
 _SECTION_LIMIT = 2900  # Slack rejects section text over 3000 characters.
 _HEADER_LIMIT = 150
+_WEBHOOK_PREFIX = "https://hooks.slack.com/"
 
 
 def _clip(text: str, limit: int = _SECTION_LIMIT) -> str:
@@ -89,10 +90,24 @@ def deploy_payload(report: DeployReport, project: str, repo_url: str) -> dict:
     return {"text": title, "blocks": blocks}
 
 
+def _normalise_url(url: str | None) -> str:
+    """Strip whitespace and one pair of matching surrounding quotes (common when pasting a secret)."""
+    url = (url or "").strip()
+    if len(url) >= 2 and url[0] == url[-1] and url[0] in "\"'":
+        url = url[1:-1]
+    return url.strip()
+
+
 def post_webhook(url: str | None, payload: dict, opener: Callable = urllib.request.urlopen) -> bool:
     """POST `payload` as JSON to a Slack incoming webhook. Never raises; returns True on success."""
+    url = _normalise_url(url)
     if not url:
         print("Slack not configured — skipped")
+        return False
+    if not url.startswith(_WEBHOOK_PREFIX):
+        # Never print the value: it is a secret.
+        print("Slack post failed: SLACK_WEBHOOK_URL is not a Slack webhook URL "
+              "(expected https://hooks.slack.com/...; check the secret for extra text)", file=sys.stderr)
         return False
     try:
         request = urllib.request.Request(
