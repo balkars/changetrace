@@ -290,7 +290,7 @@ def test_drive_relative_marker_entries_delete_nothing_outside_vault(worker, api,
     victim.write_text("keep", encoding="utf-8")
     nested.write_text("keep", encoding="utf-8")
     marker = json.loads((out / ".changetrace-vault").read_text(encoding="utf-8"))
-    marker["files"] += ["C:victim.txt", "C:victim_dir/victim.txt"]
+    marker["files"] += [f"{tmp_path.drive}victim.txt", f"{tmp_path.drive}victim_dir/victim.txt"]
     (out / ".changetrace-vault").write_text(json.dumps(marker), encoding="utf-8")
     build_vault(_repos(worker, api), out, gh_for=_no_gh)
     assert victim.read_text(encoding="utf-8") == "keep"
