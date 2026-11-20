@@ -125,3 +125,14 @@ def test_renumber_noop(scenario):
     dev_a_ships_ctx001(scenario)
     res = CliRunner().invoke(main, ["renumber", "--repo", str(scenario.dev_b)])
     assert res.exit_code == 0 and "Renumbered" not in res.output
+
+
+def test_check_file_outside_repo_exits_2(scenario):
+    res = CliRunner().invoke(main, ["check", "--file", "../x.py", "--repo", str(scenario.dev_b)])
+    assert res.exit_code == 2 and "outside the repository" in res.stderr
+
+
+def test_check_file_that_does_not_exist_warns(scenario):
+    res = CliRunner().invoke(main, ["check", "--file", "nope.py", "--repo", str(scenario.dev_b)])
+    assert res.exit_code == 0
+    assert "warning: nope.py is not a file in this repository" in res.stderr

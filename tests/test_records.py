@@ -85,3 +85,27 @@ def test_guard_with_null_expect_is_rejected():
 def test_slugify_falls_back_when_no_ascii_alphanumerics():
     from changetrace.records import slugify
     assert slugify("再試行") == "record"
+
+
+
+def _with_path(raw: str, touches: bool = False) -> str:
+    q = '"' + raw.replace("\\", "\\\\") + '"'
+    text = SAMPLE.replace("file: worker/config.py", f"file: {q}")
+    if touches:
+        q2 = '"' + raw.replace("\\", "\\\\") + '#RETRY_DELAY_SECONDS"'
+        text = text.replace("touches: [worker/config.py#RETRY_DELAY_SECONDS]", f"touches: [{q2}]")
+    return text
+
+
+@pytest.mark.parametrize("raw", ["./worker/config.py", r"worker\config.py", "worker//./config.py",
+                                 "worker/x/../config.py", r".\worker\config.py"])
+def test_guard_and_touch_paths_are_normalised(raw):
+    r = parse_record(_with_path(raw, touches=True))
+    assert r.guards[0].file == "worker/config.py"
+    assert r.touches == ["worker/config.py#RETRY_DELAY_SECONDS"]
+
+
+@pytest.mark.parametrize("raw", ["../x.py", "worker/../../x.py", "/etc/x.py", "C:/x.py", r"..\x.py"])
+def test_guard_path_outside_repo_is_an_error(raw):
+    with pytest.raises(RecordError):
+        parse_record(_with_path(raw))

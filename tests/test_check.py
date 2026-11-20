@@ -244,3 +244,19 @@ def test_augmented_assignment_is_a_warning_not_silence(scenario):
     write(b, "worker/config.py", p.read_text(encoding="utf-8") + "RETRY_DELAY_SECONDS += 2\n")
     f = run_check(b)
     assert [x.kind for x in f] == ["warning"] and "cannot verify" in f[0].message
+
+
+def test_dot_slash_guard_path_still_conflicts(scenario):
+    dev_a_ships_ctx001(scenario)
+    a, b = scenario.dev_a, scenario.dev_b
+    p = next((a / ".context" / "decisions").glob("CTX-001-*.md"))
+    text = p.read_text(encoding="utf-8").replace("file: worker/config.py", "file: ./worker/config.py")
+    assert "file: ./worker/config.py" in text
+    write(a, p.relative_to(a).as_posix(), text)
+    commit_all(a, "dot-slash guard path")
+    git(a, "push", "-q", "origin", "main")
+    git(b, "pull", "-q")
+    set_retry(b, "2")
+    f = run_check(b)
+    assert has_conflict(f)
+    assert [x.file for x in f if x.kind == "conflict"] == ["worker/config.py"]

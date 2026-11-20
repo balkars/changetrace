@@ -1,6 +1,7 @@
 """Record model: parse, render and load decision/observation records."""
 from __future__ import annotations
 
+import posixpath
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -66,6 +67,24 @@ def _normalise(text: str) -> str:
     return text.replace("\r\n", "\n")
 
 
+def normalise_guard_path(raw: str) -> str:
+    """Backslashes -> '/', normpath, strip a leading './'; absolute or '..' paths are errors."""
+    s = raw.strip().replace("\\", "/")
+    if s.startswith("/") or re.match(r"^[A-Za-z]:", s):
+        raise RecordError(f"guard path must be relative to the repository: {raw}")
+    norm = posixpath.normpath(s)
+    if norm.startswith("./"):
+        norm = norm[2:]
+    if norm in ("", ".") or norm == ".." or norm.startswith("../"):
+        raise RecordError(f"guard path must stay inside the repository: {raw}")
+    return norm
+
+
+def _norm_touch(t: str) -> str:
+    file, sep, key = t.partition("#")
+    return normalise_guard_path(file) + sep + key
+
+
 def _str_or_none(v) -> str | None:
     return None if v is None else str(v)
 
@@ -116,7 +135,7 @@ def parse_record(text: str, path: Path | None = None) -> Record:
             raise RecordError("each guard needs file, key and expect")
         if g["expect"] is None:
             raise RecordError("guard 'expect' must not be empty")
-        guards.append(Guard(str(g["file"]), str(g["key"]), str(g["expect"]), _str_or_none(g.get("previous"))))
+        guards.append(Guard(normalise_guard_path(str(g["file"])), str(g["key"]), str(g["expect"]), _str_or_none(g.get("previous"))))
 
     return Record(
         id=rid,
@@ -125,7 +144,7 @@ def parse_record(text: str, path: Path | None = None) -> Record:
         status=status,
         author=str(meta.get("author") or ""),
         created=str(meta.get("created") or ""),
-        touches=_str_list(meta.get("touches"), "touches"),
+        touches=[_norm_touch(t) for t in _str_list(meta.get("touches"), "touches")],
         guards=guards,
         supersedes=_str_list(meta.get("supersedes"), "supersedes"),
         superseded_by=_str_or_none(meta.get("superseded_by")),

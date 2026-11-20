@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -60,13 +61,17 @@ def _frozen(rec: Record) -> Record:
 
 
 def run_check(repo: Path, base: str | None = None, staged: bool = False,
-              file: str | None = None) -> list[Finding]:
+              file: str | None = None, warn_missing: bool = False) -> list[Finding]:
     repo = Path(repo).resolve()
     if base is None:
         base = base_ref(repo, load_config(repo).base_branch)
     ref = base or "HEAD"
     diff = set(changed_files(repo, base, staged))
     scope = {to_repo_path(repo, file)} & diff if file is not None else diff
+    if warn_missing and file is not None:
+        rel_file = to_repo_path(repo, file)
+        if rel_file not in diff and not (repo / rel_file).exists():
+            print(f"warning: {file} is not a file in this repository", file=sys.stderr)
 
     current = _current_records(repo, staged)
     present = {rel for rel, _ in current}

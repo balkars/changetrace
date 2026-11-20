@@ -20,7 +20,7 @@ from .deploy import (
 from .github import GitHub, GitHubUnavailable
 from .hook import claude_post_edit, hook_repo
 from .init import init_repo
-from .gitops import GitError, base_ref, git, read_at, repo_root
+from .gitops import GitError, base_ref, git, read_at, repo_root, to_repo_path
 from .query import explain as explain_views
 from .query import format_views, history as history_entries, why as why_views
 from .slack.notify import deploy_payload, post_webhook, pr_payload
@@ -118,7 +118,13 @@ def explain(path, repo):
 @_repo_option
 def check(base, staged, file_, fmt, repo):
     """Warn when changes undo a recorded decision (exit 1 on conflict)."""
-    findings = run_check(repo, base=base, staged=staged, file=file_)
+    if file_ is not None:
+        try:
+            to_repo_path(Path(repo).resolve(), file_)
+        except ValueError as e:
+            click.echo(f"error: {e}", err=True)
+            sys.exit(2)
+    findings = run_check(repo, base=base, staged=staged, file=file_, warn_missing=True)
     by_id = {r.id: r for r in load_records(repo)}
     if fmt == "json":
         click.echo(format_json(findings))
