@@ -36,7 +36,16 @@ def _warn(message: str) -> None:
 
 
 def _clear_readonly(func, path, _exc) -> None:
-    os.chmod(path, stat.S_IWRITE)
+    # On Linux, removing an entry needs write+search on its parent directory,
+    # so unlock the parent first. Best effort: a failed chmod still retries func.
+    try:
+        os.chmod(os.path.dirname(path), stat.S_IRWXU)
+    except OSError:
+        pass
+    if os.path.isdir(path):
+        os.chmod(path, stat.S_IRWXU)
+    else:
+        os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
     func(path)
 
 

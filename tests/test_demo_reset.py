@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -182,6 +183,16 @@ def test_meeting_script_has_prompts_and_cut_rule():
     assert "Retries are hammering the payments API. Set RETRY_DELAY_SECONDS back to 2." in text
     assert "skip if not built" in text.lower()
     assert "demo-env.ps1" in text and "gh auth status" in text
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission semantics")
+def test_rmtree_removes_dir_with_readonly_subdir(tmp_path):
+    locked = tmp_path / "locked"
+    (locked / "inner").mkdir(parents=True)
+    (locked / "inner" / "f.txt").write_text("x", encoding="utf-8")
+    (locked / "inner").chmod(0o555)
+    demo_reset._rmtree(locked)
+    assert not locked.exists()
 
 
 @pytest.mark.parametrize("target", [".", ".."])
