@@ -30,7 +30,8 @@ def test_pr_workflow_shape():
     assert wf["permissions"] == {"contents": "read", "pull-requests": "write"}
     (job,) = wf["jobs"].values()
     commands = "\n".join(runs(job))
-    assert "ct validate" in commands
+    assert "ct validate || echo validate > ct.failed" in commands
+    assert commands.index("ct validate") < commands.index("ct check") < commands.index("gh pr comment")
     assert "ct check --base origin/${{ github.base_ref }} --format markdown" in commands
     assert "--edit-last" in commands
     assert job["steps"][0]["with"]["fetch-depth"] == 0

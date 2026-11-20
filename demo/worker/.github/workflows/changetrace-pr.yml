@@ -24,7 +24,7 @@ jobs:
         run: pip install "changetrace @ git+https://github.com/balkars/changetrace@main"
 
       - name: Validate records
-        run: ct validate
+        run: ct validate || echo validate > ct.failed
 
       - name: Check for conflicts with recorded decisions
         run: ct check --base origin/${{ github.base_ref }} --format markdown > ct.md || echo conflict > ct.failed
