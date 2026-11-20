@@ -252,3 +252,41 @@ def test_reset_builds_api_clone_with_ctx001(tmp_path):
     assert "requests_per_minute: 120" in (api / "api" / "settings.yaml").read_text(encoding="utf-8")
     assert not (api / ".github" / "workflows").exists()
     assert _git(api, "config", "--local", "user.name") == "Dev B"
+
+
+def test_missing_api_remote_falls_back_to_local_copy(tmp_path, capsys):
+    run = tmp_path / "run"
+
+    def remote_for(name: str) -> str:
+        if name == "worker":
+            return _bare(tmp_path / "remotes" / "worker.git").as_posix()
+        return (tmp_path / "remotes" / "does-not-exist.git").as_posix()
+
+    assert demo_reset.main(["--run-dir", str(run)], remote_for=remote_for) == 0
+    assert (run / "devA" / "worker" / "config.py").exists()
+    assert (run / "devB" / "worker" / "config.py").exists()
+    assert list((run / "api" / ".context" / "decisions").glob("CTX-001-*.md"))
+    assert _git(run / "api", "log", "-1", "--format=%s") == "Initial state"
+    err = capsys.readouterr().err
+    assert "warning: api: could not push to" in err
+    assert "using a local copy" in err
+
+
+def test_worker_push_failure_still_returns_1(tmp_path):
+    def remote_for(name: str) -> str:
+        return (tmp_path / "remotes" / f"missing-{name}.git").as_posix()
+
+    assert demo_reset.main(["--run-dir", str(tmp_path / "run")], remote_for=remote_for) == 1
+
+
+def test_rmtree_handler_never_chmods_outside_run_dir(tmp_path, monkeypatch):
+    run = tmp_path / "run"
+    run.mkdir()
+    chmodded: list[str] = []
+    monkeypatch.setattr(demo_reset.os, "chmod", lambda p, m: chmodded.append(str(p)))
+    # failing path is run_dir itself: its parent (tmp_path) must not be touched
+    demo_reset._clear_readonly(lambda p: None, str(run), None, root=run)
+    assert str(tmp_path) not in chmodded
+    inner = run / "sub" / "f"
+    demo_reset._clear_readonly(lambda p: None, str(inner), None, root=run)
+    assert str(run / "sub") in chmodded

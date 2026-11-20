@@ -32,16 +32,23 @@ GITHUB_URL = re.compile(r"github\.com[/:]([^/]+)/([^/]+?)(?:\.git)?/?$")
 
 
 def _warn(message: str) -> None:
-    print(f"warning: {message}", file=sys.stderr)
-
-
-def _clear_readonly(func, path, _exc) -> None:
-    # On Linux, removing an entry needs write+search on its parent directory,
-    # so unlock the parent first. Best effort: a failed chmod still retries func.
+    line = f"warning: {message}"
     try:
-        os.chmod(os.path.dirname(path), stat.S_IRWXU)
-    except OSError:
-        pass
+        print(line, file=sys.stderr)
+    except UnicodeEncodeError:
+        print(line.encode("ascii", "replace").decode("ascii"), file=sys.stderr)
+
+
+def _clear_readonly(func, path, _exc, root: Path | None = None) -> None:
+    # On Linux, removing an entry needs write+search on its parent directory,
+    # so unlock the parent first, but only a parent strictly inside the tree
+    # being wiped. Best effort: a failed chmod still retries func.
+    parent = Path(os.path.dirname(path))
+    if root is not None and _strictly_inside(parent, root):
+        try:
+            os.chmod(parent, stat.S_IRWXU)
+        except OSError:
+            pass
     if os.path.isdir(path):
         os.chmod(path, stat.S_IRWXU)
     else:
@@ -49,13 +56,25 @@ def _clear_readonly(func, path, _exc) -> None:
     func(path)
 
 
+def _strictly_inside(child: Path, root: Path) -> bool:
+    try:
+        child.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 def _rmtree(path: Path) -> None:
     if not path.exists():
         return
+
+    def handler(func, p, exc):
+        _clear_readonly(func, p, exc, root=path)
+
     if sys.version_info >= (3, 12):
-        shutil.rmtree(path, onexc=_clear_readonly)
+        shutil.rmtree(path, onexc=handler)
     else:
-        shutil.rmtree(path, onerror=_clear_readonly)
+        shutil.rmtree(path, onerror=handler)
 
 
 def _git(cwd: Path | None, *args: str, env: dict[str, str] | None = None) -> str:
@@ -197,35 +216,64 @@ def main(
 
 
 def _reset(args, names, urls, remote_for, run_dir: Path) -> int:
-    sources: dict[str, str] = {}
-    for name in names:
+    # worker first and completely: a worker failure aborts (caller returns 1)
+    ordered = sorted(names, key=lambda n: n != "worker")
+    for name in ordered:
         with tempfile.TemporaryDirectory() as tmp:
             built = Path(tmp) / name
             _build_repo(ROOT / "demo" / name, built)
             if args.no_push:
                 seed = run_dir / "_seed" / name
                 shutil.copytree(built, seed)
-                sources[name] = str(seed)
+                _finish_clones(name, str(seed), run_dir)
                 print(f"{name}: built local seed (no push)")
                 continue
-            _git(built, "push", "-q", "--force", urls[name], "main")
-            sources[name] = urls[name]
+            try:
+                _git(built, "push", "-q", "--force", urls[name], "main")
+            except RuntimeError as exc:
+                if name == "worker":
+                    raise
+                _warn(f"{name}: could not push to {urls[name]} ({_reason_class(str(exc))}) "
+                      "— using a local copy")
+                _local_copy(built, run_dir / name)
+                print(f"{name}: local copy -> {run_dir / name}")
+                continue
             print(f"{name}: force-pushed main to {urls[name]}")
             if "github.com" in urls[name]:
                 _github_cleanup(urls[name])
             else:
                 print(f"{name}: not a github.com remote, GitHub cleanup skipped")
-
-    if "worker" in sources:
-        for folder, user, email in DEVS:
-            _clone(sources["worker"], run_dir / folder, user, email)
-            print(f"cloned worker -> {run_dir / folder}")
-    if "api" in sources:
-        _clone(sources["api"], run_dir / "api", "Dev B", "dev-b@example.test")
-        print(f"cloned api -> {run_dir / 'api'}")
-    else:
+            _finish_clones(name, urls[name], run_dir)
+    if "api" not in names:
         print("api: no demo/api template yet, skipped")
     return 0
+
+
+def _reason_class(message: str) -> str:
+    low = message.lower()
+    if "not found" in low or "does not exist" in low or "does not appear" in low:
+        return "repository not found"
+    if "authentication" in low or "permission" in low or "denied" in low:
+        return "permission denied"
+    if "could not resolve" in low or "unable to access" in low or "network" in low:
+        return "network error"
+    return "push failed"
+
+
+def _local_copy(built: Path, dest: Path) -> None:
+    shutil.copytree(built, dest)
+    _git(dest, "config", "user.name", "Dev B")
+    _git(dest, "config", "user.email", "dev-b@example.test")
+
+
+def _finish_clones(name: str, source: str, run_dir: Path) -> None:
+    if name == "worker":
+        for folder, user, email in DEVS:
+            _clone(source, run_dir / folder, user, email)
+            print(f"cloned worker -> {run_dir / folder}")
+    elif name == "api":
+        _clone(source, run_dir / "api", "Dev B", "dev-b@example.test")
+        print(f"cloned api -> {run_dir / 'api'}")
 
 
 if __name__ == "__main__":
