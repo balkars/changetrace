@@ -10,21 +10,27 @@ from .records import load_records
 
 
 def claude_post_edit(stdin_json: str, repo: Path) -> tuple[int, str]:
-    """Return (2, message) when the edit conflicts with an active decision, else (0, "").
+    """Return (2, message) when the edit conflicts with a decision or cannot be verified.
 
-    Never raises: any problem (bad JSON, path outside the repo, git or parse errors) is a silent pass.
+    Silent (0, "") only for unparsable hook JSON, a missing file_path, a path outside the
+    repo, or no findings. Any other failure is reported, never swallowed.
     """
     try:
         data = json.loads(stdin_json)
         file_path = data["tool_input"]["file_path"]
+        if not isinstance(file_path, str) or not file_path:
+            return 0, ""
         rel = to_repo_path(repo, file_path)
+    except Exception:
+        return 0, ""
+    try:
         findings = run_check(repo, file=rel)
-        if not has_conflict(findings):
+        if not any(f.kind in ("conflict", "warning") for f in findings):
             return 0, ""
         by_id = {r.id: r for r in load_records(repo)}
         return 2, format_text(findings, by_id)
-    except Exception:
-        return 0, ""
+    except Exception as exc:
+        return 2, f"ChangeTrace could not check {rel} ({type(exc).__name__}) — run ct check"
 
 
 def hook_repo(stdin_json: str, cwd: Path) -> Path:

@@ -128,3 +128,24 @@ def test_cli_init(tmp_path):
     git(tmp_path, "init", "-b", "main")
     r = CliRunner().invoke(main, ["init", "--repo", str(tmp_path), "--project", "P", "--claude-hooks"])
     assert r.exit_code == 0 and (tmp_path / ".claude/settings.json").is_file()
+
+
+def test_hook_warning_is_reported(scenario):
+    dev_a_ships_ctx001(scenario)
+    write(scenario.dev_b, "worker/config.py", 'import os\nRETRY_DELAY_SECONDS = int(os.getenv("R") or 2)\n')
+    p = str(scenario.dev_b / "worker" / "config.py")
+    code, msg = claude_post_edit(json.dumps({"tool_input": {"file_path": p}}), scenario.dev_b)
+    assert code == 2 and "cannot verify" in msg
+
+
+def test_hook_unexpected_error_is_reported(scenario):
+    dev_a_ships_ctx001(scenario)
+    d = scenario.dev_b / ".context" / "decisions"
+    (d / "CTX-009-broken.md").write_text("not a record\n", encoding="utf-8")
+    p = str(scenario.dev_b / "worker" / "config.py")
+    code, msg = claude_post_edit(json.dumps({"tool_input": {"file_path": p}}), scenario.dev_b)
+    assert code == 2 and "could not check worker/config.py" in msg and "run ct check" in msg
+
+
+def test_hook_bad_json_still_silent(scenario):
+    assert claude_post_edit("{oops", scenario.dev_b) == (0, "")
