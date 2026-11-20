@@ -119,11 +119,18 @@ def test_key_hub_lists_both_records(worker, api, tmp_path):
 def test_vault_preserves_user_notes(worker, api, tmp_path):
     out = tmp_path / "vault"
     build_vault(_repos(worker, api), out, gh_for=_no_gh)
-    (out / "My notes.md").write_text("mine", encoding="utf-8")
-    (out / "Keys" / "stale.md").write_text("old", encoding="utf-8")
+    user = ["My notes.md", "Worker service/mine.md", "Keys/mine.md", "Dashboards/mine.base", "Files/sub/deep.md"]
+    for rel in user:
+        (out / rel).parent.mkdir(parents=True, exist_ok=True)
+        (out / rel).write_text("mine", encoding="utf-8")
+    # a record disappears from the repo: its generated note is stale
+    for f in (api / ".context" / "decisions").glob("*.md"):
+        f.unlink()
     build_vault(_repos(worker, api), out, gh_for=_no_gh)
-    assert (out / "My notes.md").read_text(encoding="utf-8") == "mine"
-    assert not (out / "Keys" / "stale.md").exists()
+    for rel in user:
+        assert (out / rel).read_text(encoding="utf-8") == "mine", rel
+    assert not (out / "API service/Decisions/CTX-001 Raise API rate limit.md").exists()
+    assert not (out / "Keys/rate_limit.requests_per_minute.md").exists()
     assert (out / "Keys/RETRY_DELAY_SECONDS.md").is_file()
 
 
@@ -137,19 +144,62 @@ def test_vault_refuses_foreign_folder(worker, api, tmp_path):
     assert not (out / ".changetrace-vault").exists()
 
 
-def test_vault_refuses_unowned_name_inside_marked_vault(worker, api, tmp_path):
+def test_vault_refuses_to_overwrite_user_file_in_marked_vault(worker, api, tmp_path):
     out = tmp_path / "vault"
     build_vault(_repos(worker, api), out, gh_for=_no_gh)
-    (out / "Worker service").rename(out / "moved")
-    (out / "Worker service").mkdir()
-    (out / "Worker service" / "user.md").write_text("keep", encoding="utf-8")
     marker = json.loads((out / ".changetrace-vault").read_text(encoding="utf-8"))
-    marker["owned"] = [n for n in marker["owned"] if n != "Worker service"]
+    marker["files"].remove("Keys/RETRY_DELAY_SECONDS.md")
     (out / ".changetrace-vault").write_text(json.dumps(marker), encoding="utf-8")
+    (out / "Keys/RETRY_DELAY_SECONDS.md").write_text("user", encoding="utf-8")
     with pytest.raises(ValueError):
         build_vault(_repos(worker, api), out, gh_for=_no_gh)
-    assert (out / "Worker service" / "user.md").exists()
-    assert (out / "moved").exists()
+    assert (out / "Keys/RETRY_DELAY_SECONDS.md").read_text(encoding="utf-8") == "user"
+    assert (out / "Worker service/Decisions/CTX-002 Controlled backoff.md").exists()
+
+
+def test_failed_build_leaves_existing_vault_untouched(worker, api, tmp_path):
+    out = tmp_path / "vault"
+    build_vault(_repos(worker, api), out, gh_for=_no_gh)
+    before = sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file())
+
+    def boom(slug):
+        raise RuntimeError("gh exploded")
+
+    with pytest.raises(RuntimeError):
+        build_vault(_repos(worker, api), out, gh_for=boom)
+    after = sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file())
+    assert before == after
+    assert not [p for p in tmp_path.iterdir() if p.name.startswith(".ct-vault-stage")]
+
+
+def test_hostile_environment_name_cannot_escape_vault(worker, tmp_path):
+    write(worker, ".context/config.yml", "project: Worker service\nenvironments: ['../../../evil']\n")
+    sha = git(worker, "rev-parse", "HEAD")
+    fake = FakeGh({
+        "api repos/own/worker/deployments?environment=../../../evil": [
+            {"id": 5, "sha": sha, "created_at": "2026-11-18T10:00:00Z"}
+        ],
+        "api repos/own/worker/deployments/5/statuses": [{"state": "success"}],
+    })
+    base = tmp_path / "base"
+    out = base / "vault"
+    build_vault([HubRepo("Worker service", worker, "own/worker")], out, gh_for=lambda s: GitHub(s, runner=fake))
+    inside = {p.resolve() for p in out.rglob("*")}
+    outside = [p for p in base.rglob("*") if p.resolve() not in inside and p.resolve() != out.resolve()]
+    assert outside == []
+    assert not (tmp_path / "evil.md").exists() and not list(tmp_path.glob("evil*"))
+    deps = list((out / "Worker service" / "Deployments").glob("*.md"))
+    assert len(deps) == 1 and "#" not in deps[0].name
+
+
+def test_write_refuses_paths_outside_root(tmp_path):
+    from changetrace.vault import _write
+
+    root = tmp_path / "root"
+    root.mkdir()
+    with pytest.raises(ValueError):
+        _write(root, "../escape.md", "x", [])
+    assert not (tmp_path / "escape.md").exists()
 
 
 def test_vault_rejects_reserved_or_duplicate_project_names(worker, api, tmp_path):
@@ -171,9 +221,13 @@ def test_deployment_notes_only_with_gh(worker, tmp_path):
     })
     out = tmp_path / "vault"
     build_vault([HubRepo("Worker service", worker, "own/worker")], out, gh_for=lambda s: GitHub(s, runner=fake))
-    dep = out / "Worker service/Deployments/dev #86.md"
+    dep = out / "Worker service/Deployments/dev-86.md"
     assert dep.is_file()
     assert "[[Worker service/Decisions/CTX-002 Controlled backoff|CTX-002]]" in dep.read_text(encoding="utf-8")
+    note = (out / "Worker service/Decisions/CTX-002 Controlled backoff.md").read_text(encoding="utf-8")
+    assert f"[[Worker service/Deployments/dev-86|dev deploy {sha[:7]}]]" in note
+    base = yaml.safe_load((out / "Dashboards/Decisions.base").read_text(encoding="utf-8"))
+    assert base["views"][0]["order"][0] == "note.project"
 
     out2 = tmp_path / "vault2"
     build_vault([HubRepo("Worker service", worker, "own/worker")], out2,

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
@@ -70,11 +71,17 @@ def _link(target: str, alias: str) -> str:
     return f"[[{target}|{alias}]]"
 
 
-def _write(path: Path, text: str, written: list[Path]) -> None:
+def _write(root: Path, rel: str, text: str, written: list[str]) -> None:
+    """Write `rel` under `root`; refuse anything that would land outside it."""
+    path = root / rel
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        raise ValueError(f"refusing to write outside the vault: {rel}") from None
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
-    written.append(path)
+    written.append(Path(rel).as_posix())
 
 
 def _short_head(repo: Path) -> str:
@@ -95,32 +102,47 @@ def _banner(origin: str, sha: str) -> str:
 
 
 def _read_owned(out: Path) -> list[str]:
+    """Vault-relative POSIX paths of files a previous build wrote (from the marker)."""
     try:
         data = json.loads((out / MARKER).read_text(encoding="utf-8"))
-        owned = data.get("owned", [])
+        files = data.get("files", [])
     except (OSError, ValueError, AttributeError):
         return []
-    return [n for n in owned if isinstance(n, str) and n and "/" not in n and "\\" not in n and n not in (".", "..")]
+    ok = []
+    for f in files if isinstance(files, list) else []:
+        if isinstance(f, str) and f and f != MARKER and ".." not in Path(f).parts and not Path(f).is_absolute():
+            ok.append(f)
+    return ok
 
 
-def _prepare_out(out: Path, names: list[str]) -> None:
-    """Validate ownership, then delete previously generated entries. Raises ValueError before deleting
-    anything if the folder or any target name is not ours."""
+def _check_out(out: Path, new_files: list[str]) -> list[str]:
+    """Validate ownership and return the previously written files. Raises ValueError before anything changes."""
     if out.exists() and not out.is_dir():
         raise ValueError(f"{out} is not a folder")
     marked = (out / MARKER).is_file()
     if out.is_dir() and not marked and any(out.iterdir()):
         raise ValueError(f"refusing to build into {out}: it is not empty and has no {MARKER} marker")
     owned = _read_owned(out) if marked else []
-    for n in names:
-        if (out / n).exists() and n not in owned:
-            raise ValueError(f"refusing to overwrite '{n}' in {out}: it was not created by ct vault build")
-    for n in owned:
-        target = out / n
-        if target.is_dir() and not target.is_symlink():
-            shutil.rmtree(target)
-        elif target.exists() or target.is_symlink():
-            target.unlink()
+    for rel in new_files:
+        if (out / rel).exists() and rel not in owned:
+            raise ValueError(f"refusing to overwrite '{rel}' in {out}: it was not written by ct vault build")
+    return owned
+
+
+def _remove_owned(out: Path, owned: list[str]) -> None:
+    """Delete only files the builder wrote earlier, then prune directories left empty."""
+    root = out.resolve()
+    for rel in owned:
+        f = out / rel
+        if f.is_file() and not f.is_symlink():
+            f.unlink()
+            parent = f.parent
+            while parent.resolve() != root:
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+                parent = parent.parent
 
 
 def build_vault(
@@ -152,11 +174,27 @@ def build_vault(
             items.append(_Item(r.name, rec, rel, note, added_commit(path, rel)))
         loaded.append((r, path, origin, items))
 
-    owned_names = [OVERVIEW, *names, *FIXED_FOLDERS]
-    _prepare_out(out, owned_names)
-    out.mkdir(parents=True, exist_ok=True)
-    written: list[Path] = []
-    _write(out / MARKER, json.dumps({"owned": owned_names}, indent=2) + "\n", written)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=".ct-vault-stage-", dir=out.parent))
+    try:
+        files = _generate(loaded, names, stage, gh_for)
+        owned = _check_out(out, files)
+        _remove_owned(out, owned)
+        out.mkdir(parents=True, exist_ok=True)
+        for rel in files:
+            dest = out / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(stage / rel, dest)
+        marker = json.dumps({"files": files}, indent=2) + "\n"
+        with open(out / MARKER, "w", encoding="utf-8", newline="\n") as f:
+            f.write(marker)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    return [out / MARKER, *(out / f for f in files)]
+
+
+def _generate(loaded, names: list[str], out: Path, gh_for) -> list[str]:
+    written: list[str] = []
 
     all_items = [i for _, _, _, items in loaded for i in items]
     keys: dict[str, list[_Item]] = {}
@@ -185,14 +223,14 @@ def build_vault(
         deployments = _deployments(r, path, gh_for)
         for env, dep in deployments:
             members = [i for i in items if i.rec.kind == "decision" and i.commit and is_ancestor(path, i.commit, dep["sha"])]
-            name = f"{r.name}/Deployments/{env} #{dep['id']}"
-            lines = [_banner(origin, sha), "", f"# {env} #{dep['id']}", "",
+            name = f"{r.name}/Deployments/{_safe(env)}-{_safe(str(dep['id']))}"
+            lines = [_banner(origin, sha), "", f"# {env} deployment {dep['id']}", "",
                      f"- Commit: `{dep['sha'][:7]}`", f"- State: {dep['state']}",
                      f"- Created: {dep['created_at']}", "", "## Decisions in this deployment", ""]
             lines += [f"- {_link(i.note, i.rec.id)} {i.rec.title}" for i in members] or ["- none"]
-            _write(out / f"{name}.md", "\n".join(lines) + "\n", written)
+            _write(out, f"{name}.md", "\n".join(lines) + "\n", written)
             for i in members:
-                i.__dict__.setdefault("deployed", []).append(_link(name, f"{env} #{dep['id']}"))
+                i.__dict__.setdefault("deployed", []).append(_link(name, f"{env} deploy {dep['sha'][:7]}"))
 
         for it in items:
             rec = it.rec
@@ -226,22 +264,22 @@ def build_vault(
                     f"# {rec.id} {rec.title}\n\n{rec.body.strip()}\n")
             if links:
                 text += "\n## Links\n\n" + "\n".join(f"- {x}" for x in links) + "\n"
-            _write(out / f"{it.note}.md", text, written)
+            _write(out, f"{it.note}.md", text, written)
 
     def hub_note(path_: str, title: str, members: list[_Item]) -> None:
         lines = [f"> Generated from the linked repositories — {BANNER_TAIL}", "", f"# {title}", ""]
         for m in sorted(members, key=lambda m: (m.project, m.rec.id)):
             lines.append(f"- {m.project}: {_link(m.note, m.rec.id)} {m.rec.title} ({m.rec.status})")
-        _write(out / f"{path_}.md", "\n".join(lines) + "\n", written)
+        _write(out, f"{path_}.md", "\n".join(lines) + "\n", written)
 
     for k, members in sorted(keys.items()):
         hub_note(f"Keys/{_safe(k)}", k, members)
     for f, members in sorted(files.items()):
         hub_note(file_note(f), f, members)
 
-    _write(out / "Dashboards/Decisions.md", _dashboard(names, all_items), written)
-    _write(out / "Dashboards/Decisions.base", _BASE, written)
-    _write(out / OVERVIEW, _overview(names, all_items), written)
+    _write(out, "Dashboards/Decisions.md", _dashboard(names, all_items), written)
+    _write(out, "Dashboards/Decisions.base", _BASE, written)
+    _write(out, OVERVIEW, _overview(names, all_items), written)
     return written
 
 
@@ -305,19 +343,19 @@ views:
       and:
         - 'status == "active"'
     order:
-      - project
-      - id
-      - title
-      - author
-      - created
+      - note.project
+      - note.id
+      - note.title
+      - note.author
+      - note.created
   - type: table
     name: Superseded
     filters:
       and:
         - 'status == "superseded"'
     order:
-      - project
-      - id
-      - title
-      - superseded_by
+      - note.project
+      - note.id
+      - note.title
+      - note.superseded_by
 """
